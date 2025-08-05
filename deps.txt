@@ -1,0 +1,27 @@
+- sdl2
+type : cmake
+src  : https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.18.tar.gz
+options :
+    BUILD_SHARED_LIBS OFF
+    SDL_SHARED OFF
+    SDL_STATIC ON
+
+
+
+- filament
+type : cmake
+src  : https://github.com/google/filament/archive/refs/tags/v1.62.1.tar.gz
+options :
+    BUILD_SHARED_LIBS OFF
+    FILAMENT_SKIP_SAMPLES OFF
+    FILAMENT_SKIP_SDL2 OFF
+
+options+linux:
+    FILAMENT_SUPPORTS_VULKAN ON
+
+- spdlog
+type : cmake
+src  : https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
+options :
+    BUILD_SHARED_LIBS OFF
+
