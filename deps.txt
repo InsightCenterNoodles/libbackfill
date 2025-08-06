@@ -21,7 +21,7 @@ options+linux:
 
 - spdlog
 type : cmake
-src  : https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
+src  : https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz
 options :
     BUILD_SHARED_LIBS OFF
 

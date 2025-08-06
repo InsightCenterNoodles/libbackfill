@@ -1,8 +1,21 @@
 #include <filament/Camera.h>
 #include <filament/Engine.h>
+#include <filament/IndexBuffer.h>
+#include <filament/Material.h>
+#include <filament/RenderableManager.h>
 #include <filament/Renderer.h>
+#include <filament/Scene.h>
+#include <filament/Skybox.h>
 #include <filament/SwapChain.h>
+#include <filament/VertexBuffer.h>
+#include <filament/View.h>
+#include <filament/Viewport.h>
+
+#include <backend/BufferDescriptor.h>
+
 #include <utils/EntityManager.h>
+
+#include "generated.h"
 
 #include "SDL3/SDL.h"
 
@@ -28,7 +41,7 @@ constexpr bool is_apple = false;
     CNAME(CNAME const&)            = delete;                                   \
     CNAME(CNAME&&)                 = delete;                                   \
     CNAME& operator=(CNAME const&) = delete;                                   \
-    CNAME&(CNAME&&)                = delete;
+    CNAME& operator=(CNAME&&)      = delete;
 
 void expect(bool condition, const char* message) {
     if (!condition) {
@@ -40,7 +53,7 @@ void expect(bool condition, const char* message) {
 void* obtain_native_window(SDL_Window* window) {
 #if __APPLE__
     auto view = SDL_Metal_CreateView(window);
-    return view;
+    return SDL_Metal_GetLayer(view);
 #else
     expect(SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0,
            "Unable to get current video driver");
@@ -68,7 +81,8 @@ struct Config {
 };
 
 class LocalPlatform {
-    SDL_Window* p;
+    SDL_Window* m_window_pointer;
+    void*       m_native_window;
 
 public:
     DISABLE_MOVE_COPY(LocalPlatform);
@@ -80,120 +94,311 @@ public:
         uint32_t window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (config.resizeable) { window_flags |= SDL_WINDOW_RESIZABLE; }
 
-        p = SDL_CreateWindow(
+        m_window_pointer = SDL_CreateWindow(
             config.title.c_str(), config.w, config.h, window_flags);
+
+        m_native_window = obtain_native_window(m_window_pointer);
+
+        if (!SDL_GL_SetSwapInterval(-1)) { SDL_GL_SetSwapInterval(1); }
     }
 
     ~LocalPlatform() {
-        SDL_DestroyWindow(p);
+        SDL_DestroyWindow(m_window_pointer);
         SDL_Quit();
     }
-};
 
-struct EngineDestroyer {
-    void operator()(filament::Engine* p) { filament::Engine::destroy(p); }
-};
+    void* native_window() const { return m_native_window; }
 
+    std::array<uint32_t, 2> frame_size() const {
+        int32_t width, height;
+        SDL_GetWindowSizeInPixels(m_window_pointer, &width, &height);
+        return {
+            static_cast<unsigned int>(width),
+            static_cast<unsigned int>(height),
+        };
+    }
+};
 template <class T>
 struct EngineResourceWrapper {
-    filament::Engine* pointer;
-
+    filament::Engine* pointer = nullptr;
     EngineResourceWrapper(filament::Engine* p) : pointer(p) { }
     void operator()(T* p) { pointer->destroy(p); }
 };
 
-using WindowWrapper = std::unique_ptr<SDL_Window, WindowDestroyer>;
-using EngineWrapper = std::unique_ptr<filament::Engine, EngineDestroyer>;
+class LocalEngine {
+    filament::Engine* m_pointer;
 
-template <class T>
-using ResourceWrapper = std::unique_ptr<T, EngineResourceWrapper<T>>;
+public:
+    DISABLE_MOVE_COPY(LocalEngine);
 
+    LocalEngine() {
+        auto backend = is_apple ? filament::backend::Backend::METAL
+                                : filament::backend::Backend::VULKAN;
 
-WindowWrapper make_window() { }
-
-EngineWrapper make_engine(SDL_Window*) {
-    auto backend = is_apple ? filament::backend::Backend::METAL
-                            : filament::backend::Backend::VULKAN;
-
-    // Can use the engine config system to add in stereo
+        // Can use the engine config system to add in stereo
 
 #ifdef FILAMENT_DRIVER_SUPPORTS_VULKAN
-    // set GPU
-    if (backend == filament::backend::Backend::VULKAN &&
-        config.device.has_value()) {
-        filament::backend::Platform::
-    }
-    VulkanPlatform::Customization::GPUPreference pref;
-    // Check to see if it is an integer, if so turn it into an index.
-    if (std::all_of(gpuHint.begin(), gpuHint.end(), ::isdigit)) {
-        char* p_end {};
-        pref.index =
-            static_cast<int8_t>(std::strtol(gpuHint.c_str(), &p_end, 10));
-    } else {
-        pref.deviceName = gpuHint;
-    }
-    mCustomization = { .gpu = pref };
+        // set GPU
+        if (backend == filament::backend::Backend::VULKAN &&
+            config.device.has_value()) {
+            filament::backend::Platform::
+        }
+        VulkanPlatform::Customization::GPUPreference pref;
+        // Check to see if it is an integer, if so turn it into an index.
+        if (std::all_of(gpuHint.begin(), gpuHint.end(), ::isdigit)) {
+            char* p_end {};
+            pref.index =
+                static_cast<int8_t>(std::strtol(gpuHint.c_str(), &p_end, 10));
+        } else {
+            pref.deviceName = gpuHint;
+        }
+        mCustomization = { .gpu = pref };
 
 #endif
+        m_pointer =
+            filament::Engine::Builder()
+                .backend(backend)
+                .featureLevel(filament::backend::FeatureLevel::FEATURE_LEVEL_3)
+                .build();
+        expect(!!m_pointer, "Unable to initialize engine");
+    }
 
-    return EngineWrapper(
-        filament::Engine::Builder()
-            .backend(backend)
-            .featureLevel(filament::backend::FeatureLevel::FEATURE_LEVEL_3)
-            .build());
-}
+    ~LocalEngine() { filament::Engine::destroy(m_pointer); }
 
-auto make_renderer(void* native_window, filament::Engine* engine) {
-    auto swap_flags = filament::SwapChain::CONFIG_HAS_STENCIL_BUFFER;
+    filament::Engine* operator->() { return m_pointer; }
 
-    auto swap_chain = engine->createSwapChain(native_window, swap_flags);
+    operator filament::Engine*() const { return m_pointer; }
+};
 
-    return ResourceWrapper<filament::Renderer>(engine->createRenderer(),
-                                               engine);
-}
+class LocalRenderer {
+    filament::Engine*    m_engine;
+    filament::SwapChain* m_swap_chain;
+    filament::Renderer*  m_renderer;
+
+public:
+    DISABLE_MOVE_COPY(LocalRenderer);
+
+    LocalRenderer(LocalEngine const& le, LocalPlatform const& lp) {
+        m_engine = le;
+
+        auto swap_flags = filament::SwapChain::CONFIG_HAS_STENCIL_BUFFER;
+
+        m_swap_chain =
+            m_engine->createSwapChain(lp.native_window(), swap_flags);
+
+        m_renderer = m_engine->createRenderer();
+    }
+
+    ~LocalRenderer() {
+        m_engine->destroy(m_renderer);
+        m_engine->destroy(m_swap_chain);
+    }
+
+    filament::SwapChain* swap_chain() const { return m_swap_chain; }
+    filament::Renderer*  renderer() const { return m_renderer; }
+};
 
 
-struct RenderWindow {
-    WindowWrapper                       m_window;
-    void*                               m_native_window;
-    EngineWrapper                       m_engine;
-    ResourceWrapper<filament::Renderer> m_renderer;
+class RenderState {
+    LocalPlatform         m_platform;
+    LocalEngine           m_engine;
+    LocalRenderer         m_renderer;
+    utils::EntityManager& m_manager;
 
-    utils::Entity     main_camera;
-    filament::Camera* camera = nullptr;
+    filament::Scene* m_scene = nullptr;
 
-    RenderWindow(Config const& config)
-        : m_window(make_window(config)),
-          m_native_window(obtain_native_window(m_window.get())),
-          m_engine(make_engine(m_window.get())),
-          m_renderer(make_renderer(m_native_window, m_engine.get())) {
+    utils::Entity     m_main_camera;
+    filament::Camera* m_camera = nullptr;
 
-        auto& em = utils::EntityManager::get();
+    filament::View* m_view = nullptr;
 
-        main_camera = em.create();
+public:
+    DISABLE_MOVE_COPY(RenderState);
 
-        camera = m_engine->createCamera(main_camera);
+    RenderState(Config const& config)
+        : m_platform(config),
+          m_engine(),
+          m_renderer(m_engine, m_platform),
+          m_manager(utils::EntityManager::get()) {
 
-        camera->setExposure(16.0f, 1.0 / 125.0f, 100.0f);
+        m_scene = m_engine->createScene();
 
-        int32_t width, height;
-        SDL_GetWindowSizeInPixels(m_window.get(), &width, &height);
+        m_main_camera = m_manager.create();
+
+        m_camera = m_engine->createCamera(m_main_camera);
+
+        m_camera->setExposure(16.0f, 1.0 / 125.0f, 100.0f);
+
+        auto [width, height] = m_platform.frame_size();
 
         auto aspect_ratio = double(width) / height;
 
-        camera->setProjection(
+        m_camera->setProjection(
             45.0, aspect_ratio, 0.0625, 4096, filament::Camera::Fov::VERTICAL);
 
-        camera->setScaling({ 1.0 / aspect_ratio, 1.0 });
+        m_camera->setScaling({ 1.0 / aspect_ratio, 1.0 });
 
-        camera->lookAt({ 4, 0, -4 }, { 0, 0, -4 }, { 0, 1, 0 });
+        m_camera->lookAt({ 4, 0, -4 }, { 0, 0, 0 }, { 0, 1, 0 });
+
+        m_view = m_engine->createView();
+        m_view->setViewport({ 0, 0, width, height });
+
+        m_view->setScene(m_scene);
+        m_view->setCamera(m_camera);
     }
+
+    ~RenderState() {
+        m_engine->destroy(m_view);
+        m_engine->destroyCameraComponent(m_main_camera);
+        m_engine->destroy(m_scene);
+    }
+
+    LocalPlatform const&  platform() { return m_platform; };
+    LocalEngine const&    engine() { return m_engine; };
+    LocalRenderer const&  renderer() { return m_renderer; };
+    utils::EntityManager& manager() { return m_manager; };
+    filament::Scene*      scene() { return m_scene; }
+    filament::View*       view() { return m_view; }
 };
 
-struct State {
-    RenderWindow m_window;
+struct Vertex {
+    filament::math::float2 position;
+    uint32_t               color;
+};
 
-    State(Config const& config) : m_window(config) { }
+static_assert(sizeof(Vertex) == 12);
+
+static Vertex TRIANGLE_VERTICES[3] = {
+    { { 1, 0 }, 0xffff0000u },
+    { { cos(M_PI * 2 / 3), sin(M_PI * 2 / 3) }, 0xff00ff00u },
+    { { cos(M_PI * 4 / 3), sin(M_PI * 4 / 3) }, 0xff0000ffu },
+};
+
+static constexpr uint16_t TRIANGLE_INDICES[3] = { 0, 1, 2 };
+
+struct State {
+    RenderState m_state;
+
+    State(Config const& config) : m_state(config) { }
+
+    void initial_content() {
+        auto* engine = (filament::Engine*)m_state.engine();
+        auto* scene  = m_state.scene();
+        auto* view   = m_state.view();
+
+        auto* skybox = filament::Skybox::Builder()
+                           .color({ 0.1, 0.125, 0.25, 1.0 })
+                           .build(*engine);
+        scene->setSkybox(skybox);
+        view->setPostProcessingEnabled(false);
+
+        auto* vb = filament::VertexBuffer::Builder()
+                       .vertexCount(3)
+                       .bufferCount(1)
+                       .attribute(filament::VertexAttribute::POSITION,
+                                  0,
+                                  filament::VertexBuffer::AttributeType::FLOAT2,
+                                  0,
+                                  12)
+                       .attribute(filament::VertexAttribute::COLOR,
+                                  0,
+                                  filament::VertexBuffer::AttributeType::UBYTE4,
+                                  8,
+                                  12)
+                       .normalized(filament::VertexAttribute::COLOR)
+                       .build(*engine);
+
+        vb->setBufferAt(*engine,
+                        0,
+                        filament::VertexBuffer::BufferDescriptor(
+                            TRIANGLE_VERTICES, 36, nullptr));
+
+        auto* ib = filament::IndexBuffer::Builder()
+                       .indexCount(3)
+                       .bufferType(filament::IndexBuffer::IndexType::USHORT)
+                       .build(*engine);
+        ib->setBuffer(*engine,
+                      filament::IndexBuffer::BufferDescriptor(
+                          TRIANGLE_INDICES, 6, nullptr));
+
+
+        auto* mat = filament::Material::Builder()
+                        .package(generated::get_bakedcolor_matbin().data(),
+                                 generated::get_bakedcolor_matbin().size())
+                        .build(*engine);
+
+        auto renderable = m_state.manager().create();
+        scene->addEntity(renderable);
+
+        // void* verts = malloc(36);
+
+        // memcpy(verts, TRIANGLE_VERTICES, 36);
+        // vb->setBufferAt(
+        //     *engine,
+        //     0,
+        //     filament::VertexBuffer::BufferDescriptor(
+        //         verts,
+        //         36,
+        //         (filament::VertexBuffer::BufferDescriptor::Callback)free));
+
+        auto& rcm = engine->getRenderableManager();
+
+        filament::RenderableManager::Builder(1)
+            .boundingBox({ { -1, -1, -1 }, { 1, 1, 1 } })
+            .material(0, mat->getDefaultInstance())
+            .geometry(0,
+                      filament::RenderableManager::PrimitiveType::TRIANGLES,
+                      vb,
+                      ib,
+                      0,
+                      3)
+            .culling(false)
+            .receiveShadows(false)
+            .castShadows(false)
+            .build(*engine, renderable);
+    }
+
+    void run() {
+        // auto sdl_window = state.m_window.m_window.get();
+
+        // auto renderer = state.m_window.m_renderer.get();
+        //  auto swap_chain = renderer->get
+
+        auto* engine     = (filament::Engine*)m_state.engine();
+        auto* renderer   = m_state.renderer().renderer();
+        auto* swap_chain = m_state.renderer().swap_chain();
+
+
+        bool closed = false;
+
+        auto since_last_frame = std::chrono::high_resolution_clock::now();
+
+        while (!closed) {
+            if (!UTILS_HAS_THREADING) { engine->execute(); }
+
+            // do animation here
+
+            // process events
+
+            SDL_Event event;
+
+            while (SDL_PollEvent(&event)) {
+                switch (event.type) {
+                case SDL_EVENT_QUIT: closed = true; break;
+                case SDL_EVENT_KEY_DOWN:
+                    if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
+                        closed = true;
+                    }
+                    break;
+                }
+            }
+
+            if (renderer->beginFrame(swap_chain)) {
+                renderer->render(m_state.view());
+                renderer->endFrame();
+            }
+        }
+    }
 };
 
 
@@ -205,37 +410,7 @@ int main() {
 
     auto state = State(config);
 
-    auto sdl_window = state.m_window.m_window.get();
+    state.initial_content();
 
-    auto renderer = state.m_window.m_renderer.get();
-    // auto swap_chain = renderer->get
-
-    if (!SDL_GL_SetSwapInterval(-1)) { SDL_GL_SetSwapInterval(1); }
-
-    bool closed = false;
-
-    auto since_last_frame = std::chrono::high_resolution_clock::now();
-
-    while (!closed) {
-        if (!UTILS_HAS_THREADING) { state.m_window.m_engine->execute(); }
-
-        // do animation here
-
-        // process events
-
-        SDL_Event event;
-
-        while (SDL_PollEvent(&event)) {
-            switch (event.type) {
-            case SDL_EVENT_QUIT: closed = true; break;
-            case SDL_EVENT_KEY_DOWN:
-                if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
-                    closed = true;
-                }
-                break;
-            }
-        }
-
-        renderer->beginFrame()
-    }
+    state.run();
 }

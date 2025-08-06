@@ -24,12 +24,26 @@ endif()
 
 add_executable(ftest
     src/main.cpp
+    src/generated.h
+    src/generated.cpp
 )
+
+# For dev experience ===========================================================
+
+set(MATERIAL_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/bakedColor.mat
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/primaryLit.mat
+)
+
+
+add_custom_target(materials SOURCES ${MATERIAL_FILES})
+
+source_group("Materials" FILES ${MATERIAL_FILES})
 
 set(BUILD_SHARED_LIBS OFF)
 
 set_target_properties(ftest PROPERTIES CXX_STANDARD 20)
-
+target_compile_options(ftest PRIVATE -Wno-c23-extensions)
 target_compile_options(ftest PRIVATE -stdlib=libc++)
 target_link_options(ftest PRIVATE -stdlib=libc++)
 
@@ -123,3 +137,26 @@ set(REQUIRED_LIBS
 )
 
 find_and_set_filament_libs(ftest "${REQUIRED_LIBS}")
+
+if (NOT LINUX)
+    #target_link_libraries(ftest PRIVATE "-framework Metal -framework QuartzCore")
+    target_link_libraries(ftest PRIVATE
+        "-framework AVFoundation"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+        "-framework CoreHaptics"
+        "-framework GameController"
+        "-framework ForceFeedback"
+        "-framework Metal"
+        "-framework MetalKit"
+        "-framework CoreAudio"
+        "-framework AudioToolbox"
+        "-framework QuartzCore"
+        "-framework IOKit"
+        "-framework Cocoa"
+        "-framework Carbon"
+        "-framework UniformTypeIdentifiers"
+    )
+
+endif()
+
