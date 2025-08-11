@@ -26,6 +26,9 @@ add_executable(ftest
     src/main.cpp
     src/generated.h
     src/generated.cpp
+    src/geometry.h
+    src/geometry.cpp
+    src/utility.h
 )
 
 # For dev experience ===========================================================
@@ -33,6 +36,7 @@ add_executable(ftest
 set(MATERIAL_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/bakedColor.mat
     ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/primaryLit.mat
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/primaryInstanceLit.mat
 )
 
 

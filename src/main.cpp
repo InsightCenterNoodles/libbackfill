@@ -1,6 +1,7 @@
 #include <filament/Camera.h>
 #include <filament/Engine.h>
 #include <filament/IndexBuffer.h>
+#include <filament/LightManager.h>
 #include <filament/Material.h>
 #include <filament/RenderableManager.h>
 #include <filament/Renderer.h>
@@ -16,6 +17,8 @@
 #include <utils/EntityManager.h>
 
 #include "generated.h"
+#include "geometry.h"
+#include "utility.h"
 
 #include "SDL3/SDL.h"
 
@@ -34,21 +37,6 @@ constexpr bool is_apple = false;
 #include <chrono>
 #include <optional>
 #include <string>
-
-#include <spdlog/spdlog.h>
-
-#define DISABLE_MOVE_COPY(CNAME)                                               \
-    CNAME(CNAME const&)            = delete;                                   \
-    CNAME(CNAME&&)                 = delete;                                   \
-    CNAME& operator=(CNAME const&) = delete;                                   \
-    CNAME& operator=(CNAME&&)      = delete;
-
-void expect(bool condition, const char* message) {
-    if (!condition) {
-        spdlog::error("Condition failed: {}", message);
-        abort();
-    }
-}
 
 void* obtain_native_window(SDL_Window* window) {
 #if __APPLE__
@@ -117,12 +105,6 @@ public:
             static_cast<unsigned int>(height),
         };
     }
-};
-template <class T>
-struct EngineResourceWrapper {
-    filament::Engine* pointer = nullptr;
-    EngineResourceWrapper(filament::Engine* p) : pointer(p) { }
-    void operator()(T* p) { pointer->destroy(p); }
 };
 
 class LocalEngine {
@@ -236,9 +218,9 @@ public:
         m_camera->setProjection(
             45.0, aspect_ratio, 0.0625, 4096, filament::Camera::Fov::VERTICAL);
 
-        m_camera->setScaling({ 1.0 / aspect_ratio, 1.0 });
+        // m_camera->setScaling({ 1.0 / aspect_ratio, 1.0 });
 
-        m_camera->lookAt({ 4, 0, -4 }, { 0, 0, 0 }, { 0, 1, 0 });
+        m_camera->lookAt({ 10, 0, -10 }, { 0, 0, 0 }, { 0, 1, 0 });
 
         m_view = m_engine->createView();
         m_view->setViewport({ 0, 0, width, height });
@@ -261,23 +243,11 @@ public:
     filament::View*       view() { return m_view; }
 };
 
-struct Vertex {
-    filament::math::float2 position;
-    uint32_t               color;
-};
-
-static_assert(sizeof(Vertex) == 12);
-
-static Vertex TRIANGLE_VERTICES[3] = {
-    { { 1, 0 }, 0xffff0000u },
-    { { cos(M_PI * 2 / 3), sin(M_PI * 2 / 3) }, 0xff00ff00u },
-    { { cos(M_PI * 4 / 3), sin(M_PI * 4 / 3) }, 0xff0000ffu },
-};
-
-static constexpr uint16_t TRIANGLE_INDICES[3] = { 0, 1, 2 };
-
 struct State {
     RenderState m_state;
+
+    std::shared_ptr<LocalVertexBuffer> m_verts;
+    std::shared_ptr<LocalIndexBuffer>  m_index;
 
     State(Config const& config) : m_state(config) { }
 
@@ -292,70 +262,80 @@ struct State {
         scene->setSkybox(skybox);
         view->setPostProcessingEnabled(false);
 
-        auto* vb = filament::VertexBuffer::Builder()
-                       .vertexCount(3)
-                       .bufferCount(1)
-                       .attribute(filament::VertexAttribute::POSITION,
-                                  0,
-                                  filament::VertexBuffer::AttributeType::FLOAT2,
-                                  0,
-                                  12)
-                       .attribute(filament::VertexAttribute::COLOR,
-                                  0,
-                                  filament::VertexBuffer::AttributeType::UBYTE4,
-                                  8,
-                                  12)
-                       .normalized(filament::VertexAttribute::COLOR)
-                       .build(*engine);
+        m_verts = std::make_shared<LocalVertexBuffer>(engine, sphere_verts());
+        m_index = std::make_shared<LocalIndexBuffer>(engine, sphere_index());
 
-        vb->setBufferAt(*engine,
-                        0,
-                        filament::VertexBuffer::BufferDescriptor(
-                            TRIANGLE_VERTICES, 36, nullptr));
+        auto* mat =
+            filament::Material::Builder()
+                .package(generated::get_primaryinstancelit_matbin().data(),
+                         generated::get_primaryinstancelit_matbin().size())
+                .build(*engine);
 
-        auto* ib = filament::IndexBuffer::Builder()
-                       .indexCount(3)
-                       .bufferType(filament::IndexBuffer::IndexType::USHORT)
-                       .build(*engine);
-        ib->setBuffer(*engine,
-                      filament::IndexBuffer::BufferDescriptor(
-                          TRIANGLE_INDICES, 6, nullptr));
+        // std::vector<filament::Material::ParameterInfo> mat_info(128);
+
+        // mat_info.reserve(mat->getParameters(mat_info.data(),
+        // mat_info.size()));
+
+        // for (auto const& param : mat_info) {
+        //     spdlog::debug("Paramter {} : {} {}",
+        //                   param.name,
+        //                   (int)param.type,
+        //                   param.count);
+        // }
+
+        auto* mat_instance = mat->getDefaultInstance();
+        mat_instance->setParameter(
+            "baseColor", filament::RgbaType::LINEAR, { 1.0, 1.0, 1.0, 1.0 });
+        mat_instance->setParameter("roughness", 0.5f);
+        mat_instance->setParameter("metallic", 1.0f);
 
 
-        auto* mat = filament::Material::Builder()
-                        .package(generated::get_bakedcolor_matbin().data(),
-                                 generated::get_bakedcolor_matbin().size())
-                        .build(*engine);
+        std::vector<filament::math::mat4f> instances;
+
+        auto random_num = []() {
+            return ((float)rand() / float(RAND_MAX)) * 2.0 - 1.0;
+        };
+
+        for (auto i = 0; i < 128; i++) {
+            auto at = filament::math::float4 {
+                random_num() * 5, random_num() * 5, random_num() * 5, 1.0
+            };
+            instances.emplace_back(filament::math::mat4f {
+                at,
+                filament::math::float4 { 0, 0, 0, 1 },
+                filament::math::float4 { 0.5, 0.5, 0.5, 0 },
+                filament::math::float4 {},
+            });
+        }
+
+        mat_instance->setParameter(
+            "inst_data", instances.data(), instances.size());
 
         auto renderable = m_state.manager().create();
         scene->addEntity(renderable);
 
-        // void* verts = malloc(36);
-
-        // memcpy(verts, TRIANGLE_VERTICES, 36);
-        // vb->setBufferAt(
-        //     *engine,
-        //     0,
-        //     filament::VertexBuffer::BufferDescriptor(
-        //         verts,
-        //         36,
-        //         (filament::VertexBuffer::BufferDescriptor::Callback)free));
-
         auto& rcm = engine->getRenderableManager();
 
         filament::RenderableManager::Builder(1)
-            .boundingBox({ { -1, -1, -1 }, { 1, 1, 1 } })
-            .material(0, mat->getDefaultInstance())
+            .boundingBox({ { -100, -100, -100 }, { 100, 100, 100 } })
+            .instances(instances.size())
+            .material(0, mat_instance)
             .geometry(0,
                       filament::RenderableManager::PrimitiveType::TRIANGLES,
-                      vb,
-                      ib,
+                      m_verts->vertex_buffer(),
+                      m_index->index_buffer(),
                       0,
-                      3)
-            .culling(false)
-            .receiveShadows(false)
-            .castShadows(false)
+                      m_index->index_count())
+            .castShadows(true)
             .build(*engine, renderable);
+
+        utils::Entity sun = utils::EntityManager::get().create();
+        filament::LightManager::Builder(filament::LightManager::Type::SUN)
+            .intensity(100000.0f)
+            .castShadows(true)
+            //.direction({ -0.5f, -1.0f, -0.3f })
+            .build(*engine, sun);
+        scene->addEntity(sun);
     }
 
     void run() {
@@ -403,6 +383,8 @@ struct State {
 
 
 int main() {
+
+    spdlog::set_level(spdlog::level::debug);
 
     auto config = Config {
         .title = "Test Window",

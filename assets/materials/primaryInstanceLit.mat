@@ -1,0 +1,72 @@
+material {
+    name : PrimaryLit,
+    shadingModel : lit,
+    instanced: true,
+    requires : [ tangents ],
+    parameters : [
+            { type: float3, name: baseColor },
+            { type: float,  name: roughness },
+            { type: float,  name: metallic },
+            { type: float,  name: reflectance },
+            { type: float3, name: sheenColor },
+            { type: float,  name: sheenRoughness },
+            { type: float,  name: clearCoat },
+            { type: float,  name: clearCoatRoughness },
+            { type: float,  name: anisotropy },
+            { type: float4, name: emissive },
+
+            // Per-instance transform palette:
+            //   T = first column (xyz = translation, w unused)
+            //   Q = second column as quaternion (xyzw)
+            //   S = third column (xyz = scale, w unused)
+            // Fourth column currently unused
+            { type: float4x4[1024], name: inst_data }
+    ],
+    specularAntiAliasing : true
+}
+
+vertex {
+    float3 rotate_vertex_position(in float3 v, in float4 q) {
+        return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    }
+
+    void materialVertex(inout MaterialVertexInputs mvi) {
+        // instance index
+        int idx = getInstanceIndex();
+
+        // unpack instance data
+        float3 T = materialParams.inst_data[idx][0].xyz;
+        float4 Q = materialParams.inst_data[idx][1];     // quaternion (x,y,z,w)
+        float3 S = materialParams.inst_data[idx][2].xyz;
+
+        // position
+        float3 pos_obj   = getPosition().xyz;
+        float3 pos_world = rotate_vertex_position(pos_obj * S, Q) + T;
+        float4x4 W       = getWorldFromModelMatrix();
+        mvi.worldPosition = mulMat4x4Float3(W, pos_world);
+
+        // normal
+        // mvi.worldNormal is in world space already. And we can't get a plain normal!
+        float3x3 N = getWorldFromModelNormalMatrix();      // model->world for normals
+        float3 n_world = mvi.worldNormal;
+        float3 n_obj   = normalize(inverse(N) * n_world);  // world -> object
+        float3 n_inst  = normalize(rotate_vertex_position(n_obj, Q));
+        mvi.worldNormal = normalize(N * n_inst);           // back to world
+    }
+}
+
+fragment {
+    void material(inout MaterialInputs material) {
+        prepareMaterial(material);
+        material.baseColor.rgb = materialParams.baseColor;
+        material.roughness = materialParams.roughness;
+        material.metallic = materialParams.metallic;
+        material.reflectance = materialParams.reflectance;
+        material.sheenColor = materialParams.sheenColor;
+        material.sheenRoughness = materialParams.sheenRoughness;
+        material.clearCoat = materialParams.clearCoat;
+        material.clearCoatRoughness = materialParams.clearCoatRoughness;
+        material.anisotropy = materialParams.anisotropy;
+        material.emissive = materialParams.emissive;
+    }
+}
