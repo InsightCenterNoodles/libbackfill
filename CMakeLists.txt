@@ -24,10 +24,9 @@ endif()
 
 add_executable(ftest
     src/main.cpp
-    src/generated.h
-    src/generated.cpp
-    src/geometry.h
-    src/geometry.cpp
+    src/generated.h src/generated.cpp
+    src/geometry.h src/geometry.cpp
+    src/projection.h src/projection.cpp
     src/utility.h
 )
 

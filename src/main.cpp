@@ -8,6 +8,7 @@
 #include <filament/Scene.h>
 #include <filament/Skybox.h>
 #include <filament/SwapChain.h>
+#include <filament/TransformManager.h>
 #include <filament/VertexBuffer.h>
 #include <filament/View.h>
 #include <filament/Viewport.h>
@@ -18,6 +19,7 @@
 
 #include "generated.h"
 #include "geometry.h"
+#include "projection.h"
 #include "utility.h"
 
 #include "SDL3/SDL.h"
@@ -218,9 +220,7 @@ public:
         m_camera->setProjection(
             45.0, aspect_ratio, 0.0625, 4096, filament::Camera::Fov::VERTICAL);
 
-        // m_camera->setScaling({ 1.0 / aspect_ratio, 1.0 });
-
-        m_camera->lookAt({ 10, 0, -10 }, { 0, 0, 0 }, { 0, 1, 0 });
+        m_camera->lookAt({ 15, 15, 15 }, { 0, 0, 0 }, { 0, 1, 0 });
 
         m_view = m_engine->createView();
         m_view->setViewport({ 0, 0, width, height });
@@ -241,6 +241,7 @@ public:
     utils::EntityManager& manager() { return m_manager; };
     filament::Scene*      scene() { return m_scene; }
     filament::View*       view() { return m_view; }
+    filament::Camera*     camera() { return m_camera; }
 };
 
 struct State {
@@ -256,11 +257,14 @@ struct State {
         auto* scene  = m_state.scene();
         auto* view   = m_state.view();
 
+        auto& transform = engine->getTransformManager();
+
         auto* skybox = filament::Skybox::Builder()
                            .color({ 0.1, 0.125, 0.25, 1.0 })
                            .build(*engine);
         scene->setSkybox(skybox);
-        view->setPostProcessingEnabled(false);
+        view->setPostProcessingEnabled(true);
+        // view->setPostProcessingEnabled(false);
 
         m_verts = std::make_shared<LocalVertexBuffer>(engine, sphere_verts());
         m_index = std::make_shared<LocalIndexBuffer>(engine, sphere_index());
@@ -286,7 +290,7 @@ struct State {
         auto* mat_instance = mat->getDefaultInstance();
         mat_instance->setParameter(
             "baseColor", filament::RgbaType::LINEAR, { 1.0, 1.0, 1.0, 1.0 });
-        mat_instance->setParameter("roughness", 0.5f);
+        mat_instance->setParameter("roughness", 0.1f);
         mat_instance->setParameter("metallic", 1.0f);
 
 
@@ -329,13 +333,93 @@ struct State {
             .castShadows(true)
             .build(*engine, renderable);
 
-        utils::Entity sun = utils::EntityManager::get().create();
-        filament::LightManager::Builder(filament::LightManager::Type::SUN)
-            .intensity(100000.0f)
-            .castShadows(true)
-            //.direction({ -0.5f, -1.0f, -0.3f })
-            .build(*engine, sun);
-        scene->addEntity(sun);
+        if (false) {
+            utils::Entity sun = utils::EntityManager::get().create();
+
+            filament::LightManager::Builder(filament::LightManager::Type::SUN)
+                .intensity(100000.0f)
+                .color({ 0, 1, 0 })
+                .castShadows(true)
+                .build(*engine, sun);
+            scene->addEntity(sun);
+        }
+
+        constexpr float intensity = 1200000.0f;
+
+        struct Spec {
+            filament::math::float3 position;
+            filament::math::float3 direction; // normalized
+            filament::LinearColor  color;
+            float                  intensity; // lumens
+            float                  falloff;   // meters
+            float                  innerDeg, outerDeg;
+        } specs[] = {
+            // -X (red): place at +X, point toward -X (origin)
+            { { 10.0f, 0.0f, 0.0f },
+              normalize(filament::math::float3 { -1, 0, 0 }),
+              filament::LinearColor { 1, 0, 0 },
+              intensity,
+              30.0f,
+              20.0f,
+              25.0f },
+
+            // -Y (green): place above, point downward
+            { { 0.0f, 10.0f, 0.0f },
+              normalize(filament::math::float3 { 0, -1, 0 }),
+              filament::LinearColor { 0, 1, 0 },
+              intensity,
+              30.0f,
+              20.0f,
+              25.0f },
+
+            // -Z (blue): place in front, point toward -Z (origin if your scene
+            // is around (0,0,0))
+            { { 0.0f, 0.0f, 10.0f },
+              normalize(filament::math::float3 { 0, 0, -1 }),
+              filament::LinearColor { 0, 0, 1 },
+              intensity,
+              30.0f,
+              20.0f,
+              25.0f },
+        };
+
+        constexpr auto DEG_TO_RAD = (M_PI / 180);
+
+        auto& en = utils::EntityManager::get();
+
+        auto& tm = engine->getTransformManager();
+        auto& lm = engine->getLightManager();
+
+
+        for (const auto& s : specs) {
+            utils::Entity e = en.create();
+            filament::LightManager::Builder(filament::LightManager::Type::SPOT)
+                .intensity(s.intensity)
+                .color(s.color)
+                .falloff(s.falloff)
+                .direction(s.direction)
+                .spotLightCone(DEG_TO_RAD * (s.innerDeg),
+                               DEG_TO_RAD * (s.outerDeg))
+                .castShadows(true)
+                .build(*engine, e);
+
+            // place the light
+            if (auto inst = tm.getInstance(e)) {
+                tm.setTransform(inst,
+                                filament::math::mat4f::translation(s.position));
+            } else {
+                tm.create(
+                    e, {}, filament::math::mat4f::translation(s.position));
+            }
+
+            // (optional) set direction again post-build, in case you animate
+            // later
+            if (auto li = lm.getInstance(e)) {
+                lm.setDirection(li, s.direction);
+            }
+
+            scene->addEntity(e);
+        }
     }
 
     void run() {
@@ -352,6 +436,8 @@ struct State {
         bool closed = false;
 
         auto since_last_frame = std::chrono::high_resolution_clock::now();
+
+        float head_offset = 0;
 
         while (!closed) {
             if (!UTILS_HAS_THREADING) { engine->execute(); }
@@ -371,6 +457,41 @@ struct State {
                     }
                     break;
                 }
+            }
+
+            filament::math::mat4 world_to_screen_matrix;
+
+            update_world_to_screen_matrix(world_to_screen_matrix);
+
+            float near = 0.1;
+            float far  = 1000;
+
+            float new_head_x = std::sin(head_offset) * 2.0 - 1;
+            head_offset += .00001;
+
+            filament::math::float3 head_pos = { new_head_x, 1.5, 5 };
+            filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
+
+            auto p = compute_off_axis_projection(world_to_screen_matrix,
+                                                 head_pos,
+                                                 filament::math::quat(head_rot),
+                                                 true,
+                                                 near,
+                                                 far);
+
+            if (true) {
+                m_state.camera()->setCustomProjection(p, near, far);
+
+                // m_state.camera()->setModelMatrix(filament::math::mat4f(
+                //     filament::math::float4 { 1, 0, 0, 0 },
+                //     filament::math::float4 { 0, 1, 0, 0 },
+                //     filament::math::float4 { 0, 0, 1, 0 },
+                //     filament::math::float4 { 0, 0, 0, 1 }));
+
+                auto model = filament::math::mat4f::translation(head_pos) *
+                             filament::math::mat4f(head_rot);
+
+                m_state.camera()->setModelMatrix(model);
             }
 
             if (renderer->beginFrame(swap_chain)) {
