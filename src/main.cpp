@@ -309,7 +309,7 @@ struct State {
         auto* mat_instance = mat->getDefaultInstance();
         mat_instance->setParameter(
             "baseColor", filament::RgbaType::LINEAR, { 1.0, 1.0, 1.0, 1.0 });
-        mat_instance->setParameter("roughness", 0.1f);
+        mat_instance->setParameter("roughness", 0.3f);
         mat_instance->setParameter("metallic", 1.0f);
 
 
@@ -492,7 +492,7 @@ struct State {
             filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
 
             { // old way
-                spdlog::debug("OLD");
+                // spdlog::debug("OLD");
                 auto p =
                     compute_off_axis_projection(world_to_screen_matrix,
                                                 head_pos,
@@ -513,18 +513,37 @@ struct State {
 
                 m_state.camera()->setModelMatrix(model);
 
-                evaluate(model, p);
+                // evaluate(model, p);
             }
 
             { // new way
-                spdlog::debug("NEW");
+                // spdlog::debug("NEW");
 
-                auto model = filament::math::mat4f::translation(head_pos) *
-                             filament::math::mat4f(head_rot);
+                // auto model = filament::math::mat4f::translation(head_pos) *
+                //              filament::math::mat4f(head_rot);
 
-                m_state.camera()->setModelMatrix(model);
+                // auto VP =
+                //     compute_off_axis_projection(world_to_screen_matrix,
+                //                                 head_pos,
+                //                                 filament::math::quat(head_rot),
+                //                                 true,
+                //                                 near,
+                //                                 far,
+                //                                 true);
 
-                auto p =
+
+                // VP = VP * inverse(model);
+
+                // m_state.camera()->setModelMatrix(model);
+                // m_state.camera()->setCustomProjection(VP, near, far);
+
+
+                // evaluate(model, VP);
+
+                auto H = filament::math::mat4f::translation(head_pos) *
+                         filament::math::mat4f(head_rot);
+
+                auto P =
                     compute_off_axis_projection(world_to_screen_matrix,
                                                 head_pos,
                                                 filament::math::quat(head_rot),
@@ -533,15 +552,21 @@ struct State {
                                                 far,
                                                 false);
 
-                p = p * inverse(model);
 
-                m_state.camera()->setCustomProjection(p, near, far);
+                auto V       = world_to_screen_matrix;
+                auto V_prime = V * inverse(H);
+
+                auto C = inverse(V_prime);
 
 
-                evaluate(model, p);
+                m_state.camera()->setModelMatrix(C);
+                m_state.camera()->setCustomProjection(P, near, far);
+
+
+                // evaluate(model, VP);
             }
 
-            exit(0);
+            // exit(0);
 
 
             if (renderer->beginFrame(swap_chain)) {
