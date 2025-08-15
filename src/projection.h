@@ -10,7 +10,8 @@ compute_off_axis_projection(filament::math::mat4 const& world_to_screen_matrix,
                             filament::math::quat const&    orientation,
                             bool                           left_eye,
                             float                          near,
-                            float                          far);
+                            float                          far,
+                            bool                           with_hack);
 
 void update_world_to_screen_matrix(
     filament::math::mat4& world_to_screen_matrix);

@@ -244,6 +244,25 @@ public:
     filament::Camera*     camera() { return m_camera; }
 };
 
+void evaluate(filament::math::mat4f model, filament::math::mat4 projection) {
+
+    filament::math::mat4 mv = model * projection;
+
+    std::vector<filament::math::float3> check = {
+        { -2.5, 0, -1.768 },
+        { 2.5, 0, -1.768 },
+        { 2.5, 2.5, -1.768 },
+        { 0, 1, 0 },
+    };
+
+    for (auto c : check) {
+        auto r = mv * c;
+
+        spdlog::debug(
+            "CHECK {} {} {} -> {} {} {}", c.x, c.y, c.z, r.x, r.y, r.z);
+    }
+}
+
 struct State {
     RenderState m_state;
 
@@ -472,27 +491,58 @@ struct State {
             filament::math::float3 head_pos = { new_head_x, 1.5, 5 };
             filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
 
-            auto p = compute_off_axis_projection(world_to_screen_matrix,
-                                                 head_pos,
-                                                 filament::math::quat(head_rot),
-                                                 true,
-                                                 near,
-                                                 far);
+            { // old way
+                spdlog::debug("OLD");
+                auto p =
+                    compute_off_axis_projection(world_to_screen_matrix,
+                                                head_pos,
+                                                filament::math::quat(head_rot),
+                                                true,
+                                                near,
+                                                far,
+                                                true);
 
-            if (true) {
+
                 m_state.camera()->setCustomProjection(p, near, far);
 
-                // m_state.camera()->setModelMatrix(filament::math::mat4f(
-                //     filament::math::float4 { 1, 0, 0, 0 },
-                //     filament::math::float4 { 0, 1, 0, 0 },
-                //     filament::math::float4 { 0, 0, 1, 0 },
-                //     filament::math::float4 { 0, 0, 0, 1 }));
+                auto model = filament::math::mat4f(
+                    filament::math::float4 { 1, 0, 0, 0 },
+                    filament::math::float4 { 0, 1, 0, 0 },
+                    filament::math::float4 { 0, 0, 1, 0 },
+                    filament::math::float4 { 0, 0, 0, 1 });
+
+                m_state.camera()->setModelMatrix(model);
+
+                evaluate(model, p);
+            }
+
+            { // new way
+                spdlog::debug("NEW");
 
                 auto model = filament::math::mat4f::translation(head_pos) *
                              filament::math::mat4f(head_rot);
 
                 m_state.camera()->setModelMatrix(model);
+
+                auto p =
+                    compute_off_axis_projection(world_to_screen_matrix,
+                                                head_pos,
+                                                filament::math::quat(head_rot),
+                                                true,
+                                                near,
+                                                far,
+                                                false);
+
+                p = p * inverse(model);
+
+                m_state.camera()->setCustomProjection(p, near, far);
+
+
+                evaluate(model, p);
             }
+
+            exit(0);
+
 
             if (renderer->beginFrame(swap_chain)) {
                 renderer->render(m_state.view());

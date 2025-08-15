@@ -35,7 +35,8 @@ compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
                             quat const&    orientation,
                             bool           left_eye,
                             float          near,
-                            float          far) {
+                            float          far,
+                            bool           with_hack) {
     assert(near > 0);
     assert(far > 0);
 
@@ -85,7 +86,9 @@ compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
 
     auto projection = mat4 { c0, c1, c2, c3 };
 
-    //    projection *= world_to_screen_matrix;
+    if (with_hack) { projection *= world_to_screen_matrix; }
+
+    //
 
     return projection;
 }
