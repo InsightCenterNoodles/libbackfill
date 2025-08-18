@@ -5,6 +5,7 @@
 
 using namespace filament::math;
 
+// Addition for quat * vec4
 template <typename T, typename U>
 inline constexpr details::TVec4<details::arithmetic_result_t<T, U>>
 operator*(const details::TQuaternion<T>& q, const details::TVec4<U>& v4) {
@@ -15,32 +16,27 @@ operator*(const details::TQuaternion<T>& q, const details::TVec4<U>& v4) {
     return details::TVec4<R>(rotated, R(v4.w)); // keep w as-is
 }
 
-struct ScreenDesc {
-    double3 lower_left;
-    double3 lower_right;
-    double3 upper_right;
-};
 
-ScreenDesc get_screen_desc() {
-    return ScreenDesc {
-        .lower_left  = { -2.5, 0, -1.768 },
-        .lower_right = { 2.5, 0, -1.768 },
-        .upper_right = { 2.5, 2.5, -1.768 },
-    };
+namespace proj {
+
+ScreenDesc& get_screen_desc() {
+    static ScreenDesc ret;
+
+    return ret;
 }
 
-filament::math::mat4
-compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
-                            double3 const& position,
-                            quat const&    orientation,
-                            bool           left_eye,
-                            float          near,
-                            float          far,
-                            bool           with_hack) {
+void init(ScreenDesc screen_info) {
+    get_screen_desc() = screen_info;
+}
+
+mat4 compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
+                                 double3 const& position,
+                                 quat const&    orientation,
+                                 bool           left_eye,
+                                 float          near,
+                                 float          far) {
     assert(near > 0);
     assert(far > 0);
-
-    // glm::dmat4 rot_mat = glm::mat4_cast(orientation);
 
     ScreenDesc desc = get_screen_desc();
 
@@ -49,8 +45,8 @@ compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
     double4 H(desc.upper_right, 1.0);
 
 
-    const float iod     = -.06; // now then, why is this negative?
-    const float eye_sep = (left_eye ? -iod : iod);
+    const float iod     = 0.06;
+    const float eye_sep = (left_eye ? iod : -iod);
 
     E[0] += eye_sep / 2.0;
 
@@ -70,8 +66,6 @@ compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
 
     const float depth = B - F;
 
-    // glm has so many extra copies here, fix?
-
     double4 c0 = double4((2.0 * E[2]) / width, 0, 0, 0);
     double4 c1 = double4(0, (2.0 * E[2]) / height, 0, 0);
     double4 c2 = double4((H[0] + L[0] - 2 * E[0]) / width,
@@ -86,14 +80,10 @@ compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
 
     auto projection = mat4 { c0, c1, c2, c3 };
 
-    if (with_hack) { projection *= world_to_screen_matrix; }
-
-    //
-
     return projection;
 }
 
-void update_world_to_screen_matrix(mat4& world_to_screen_matrix) {
+mat4 compute_world_to_screen_matrix() {
     ScreenDesc desc = get_screen_desc();
 
     auto x_axis = normalize(desc.lower_right - desc.lower_left);
@@ -102,7 +92,7 @@ void update_world_to_screen_matrix(mat4& world_to_screen_matrix) {
 
     auto z_axis = normalize(cross(x_axis, y_axis));
 
-    world_to_screen_matrix = mat4 {
+    auto world_to_screen_matrix = mat4 {
         double4(x_axis, 0),
         double4(y_axis, 0),
         double4(z_axis, 0),
@@ -110,4 +100,8 @@ void update_world_to_screen_matrix(mat4& world_to_screen_matrix) {
     };
 
     world_to_screen_matrix = inverse(world_to_screen_matrix);
+
+    return world_to_screen_matrix;
 }
+
+} // namespace proj

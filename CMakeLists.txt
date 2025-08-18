@@ -28,6 +28,7 @@ add_executable(ftest
     src/geometry.h src/geometry.cpp
     src/projection.h src/projection.cpp
     src/utility.h
+    src/config.h
 )
 
 # For dev experience ===========================================================

@@ -17,6 +17,7 @@
 
 #include <utils/EntityManager.h>
 
+#include "config.h"
 #include "generated.h"
 #include "geometry.h"
 #include "projection.h"
@@ -60,15 +61,6 @@ void* obtain_native_window(SDL_Window* window) {
 #endif
 }
 
-struct Config {
-    std::string        title;
-    std::optional<int> device = std::nullopt;
-
-    int w = 1024;
-    int h = 768;
-
-    bool resizeable = false;
-};
 
 class LocalPlatform {
     SDL_Window* m_window_pointer;
@@ -243,25 +235,6 @@ public:
     filament::View*       view() { return m_view; }
     filament::Camera*     camera() { return m_camera; }
 };
-
-void evaluate(filament::math::mat4f model, filament::math::mat4 projection) {
-
-    filament::math::mat4 mv = model * projection;
-
-    std::vector<filament::math::float3> check = {
-        { -2.5, 0, -1.768 },
-        { 2.5, 0, -1.768 },
-        { 2.5, 2.5, -1.768 },
-        { 0, 1, 0 },
-    };
-
-    for (auto c : check) {
-        auto r = mv * c;
-
-        spdlog::debug(
-            "CHECK {} {} {} -> {} {} {}", c.x, c.y, c.z, r.x, r.y, r.z);
-    }
-}
 
 struct State {
     RenderState m_state;
@@ -478,9 +451,8 @@ struct State {
                 }
             }
 
-            filament::math::mat4 world_to_screen_matrix;
-
-            update_world_to_screen_matrix(world_to_screen_matrix);
+            auto world_to_screen_matrix =
+                proj::compute_world_to_screen_matrix();
 
             float near = 0.1;
             float far  = 1000;
@@ -491,66 +463,19 @@ struct State {
             filament::math::float3 head_pos = { new_head_x, 1.5, 5 };
             filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
 
-            { // old way
-                // spdlog::debug("OLD");
-                auto p =
-                    compute_off_axis_projection(world_to_screen_matrix,
-                                                head_pos,
-                                                filament::math::quat(head_rot),
-                                                true,
-                                                near,
-                                                far,
-                                                true);
-
-
-                m_state.camera()->setCustomProjection(p, near, far);
-
-                auto model = filament::math::mat4f(
-                    filament::math::float4 { 1, 0, 0, 0 },
-                    filament::math::float4 { 0, 1, 0, 0 },
-                    filament::math::float4 { 0, 0, 1, 0 },
-                    filament::math::float4 { 0, 0, 0, 1 });
-
-                m_state.camera()->setModelMatrix(model);
-
-                // evaluate(model, p);
-            }
 
             { // new way
-                // spdlog::debug("NEW");
-
-                // auto model = filament::math::mat4f::translation(head_pos) *
-                //              filament::math::mat4f(head_rot);
-
-                // auto VP =
-                //     compute_off_axis_projection(world_to_screen_matrix,
-                //                                 head_pos,
-                //                                 filament::math::quat(head_rot),
-                //                                 true,
-                //                                 near,
-                //                                 far,
-                //                                 true);
-
-
-                // VP = VP * inverse(model);
-
-                // m_state.camera()->setModelMatrix(model);
-                // m_state.camera()->setCustomProjection(VP, near, far);
-
-
-                // evaluate(model, VP);
 
                 auto H = filament::math::mat4f::translation(head_pos) *
                          filament::math::mat4f(head_rot);
 
-                auto P =
-                    compute_off_axis_projection(world_to_screen_matrix,
-                                                head_pos,
-                                                filament::math::quat(head_rot),
-                                                true,
-                                                near,
-                                                far,
-                                                false);
+                auto P = proj::compute_off_axis_projection(
+                    world_to_screen_matrix,
+                    head_pos,
+                    filament::math::quat(head_rot),
+                    true,
+                    near,
+                    far);
 
 
                 auto V       = world_to_screen_matrix;
@@ -579,8 +504,13 @@ struct State {
 
 
 int main() {
-
     spdlog::set_level(spdlog::level::debug);
+
+    proj::init(proj::ScreenDesc {
+        .lower_left  = { -2.5, 0, -1.768 },
+        .lower_right = { 2.5, 0, -1.768 },
+        .upper_right = { 2.5, 2.5, -1.768 },
+    });
 
     auto config = Config {
         .title = "Test Window",
