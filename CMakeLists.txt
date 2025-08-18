@@ -29,6 +29,10 @@ add_executable(ftest
     src/projection.h src/projection.cpp
     src/utility.h
     src/config.h
+    src/localplatform.h src/localplatform.cpp
+    src/localengine.h src/localengine.cpp
+    src/localrenderer.h src/localrenderer.cpp
+    src/renderstate.h src/renderstate.cpp
 )
 
 # For dev experience ===========================================================
