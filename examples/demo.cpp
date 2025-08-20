@@ -2,10 +2,7 @@
 #include <span>
 #include <spdlog/spdlog.h>
 
-#include "api.h"
-
-// for testing only
-#include <math/vec3.h>
+#include <backfill/api.h>
 
 template <>
 struct fmt::formatter<float4> {
@@ -206,7 +203,15 @@ constexpr ushort3 SPHERE_INDEX[] = {
     { 160, 16, 161 },  { 16, 17, 161 },   { 161, 17, 18 },   { 17, 1, 18 },
 };
 
-using namespace filament;
+float dot(float3 a, float3 b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+float3 normalize(float3 v) {
+    float norm = dot(v, v);
+
+    return { v.x / norm, v.y / norm, v.z / norm };
+}
 
 static std::vector<FPackedVertex> make_sphere() {
     std::vector<FVertexPNU> ret;
@@ -216,8 +221,7 @@ static std::vector<FPackedVertex> make_sphere() {
         auto const& p = SPHERE_POS[i];
 
         auto position = p;
-        auto normal =
-            normalize(math::float3(position.x, position.y, position.z));
+        auto normal   = normalize({ position.x, position.y, position.z });
 
         ret[i] = FVertexPNU {
             .position = position,
@@ -296,7 +300,7 @@ void setup_lights(FSession* session) {
         flc_set_direction(light_config, s.direction);
         flc_set_spot_cone(
             light_config, DEG_TO_RAD * (s.innerDeg), DEG_TO_RAD * (s.outerDeg));
-        flc_set_shadows(light_config, true);
+        flc_set_shadows(light_config, false);
 
         fs_add_light(session, entity, light_config);
 
@@ -313,6 +317,7 @@ void setup_lights(FSession* session) {
 }
 
 int main() {
+    // We intentionally don't clean anything up..
     spdlog::set_level(spdlog::level::debug);
 
     spdlog::info("Starting up...");
@@ -327,7 +332,7 @@ int main() {
 
     fconfig_set_title(ptr, "Test Window");
     fconfig_set_screen(ptr, 1920, 1200);
-    fconfig_set_offaxis_plane(ptr, &plane);
+    // fconfig_set_offaxis_plane(ptr, &plane);
 
     auto* session = fs_init(ptr);
 
@@ -340,7 +345,7 @@ int main() {
     auto* mat = fmaterial_init(session, FMaterialConfig {});
 
     fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
-    fmaterial_set_roughness_metallic(mat, .5, 1);
+    fmaterial_set_roughness_metallic(mat, .9, 1);
 
     auto sphere = make_sphere();
 
@@ -366,6 +371,15 @@ int main() {
     auto entity = fs_new_entity(session);
 
     fs_add_renderable(session, entity, mesh, mat);
+
+    {
+        // Move the entity up a bit
+        mat4 transform;
+        mat4_identity(&transform);
+        mat4_transform(&transform, { 0, 1.5, 0 });
+
+        fs_add_transform(session, entity, &transform);
+    }
 
     setup_lights(session);
 

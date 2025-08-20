@@ -1,0 +1,10 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@
+
+Name: backfill
+Description: The backfill immersive rendering library
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lbackfill_full
+Cflags: -I${includedir}
