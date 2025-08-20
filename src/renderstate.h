@@ -24,7 +24,7 @@ class RenderState {
 public:
     DISABLE_MOVE_COPY(RenderState);
 
-    RenderState(Config const& config);
+    RenderState(FConfig const& config);
 
     ~RenderState();
 

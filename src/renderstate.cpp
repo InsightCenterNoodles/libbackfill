@@ -6,7 +6,7 @@
 #include <utils/EntityManager.h>
 
 
-RenderState::RenderState(Config const& config)
+RenderState::RenderState(FConfig const& config)
     : m_platform(config),
       m_engine(),
       m_renderer(m_engine, m_platform),

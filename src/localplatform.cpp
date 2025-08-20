@@ -4,6 +4,10 @@
 #include <SDL3/SDL_video.h>
 
 #ifdef __APPLE__
+#    define NS_PRIVATE_IMPLEMENTATION
+#    define CA_PRIVATE_IMPLEMENTATION
+#    define MTL_PRIVATE_IMPLEMENTATION
+#    include "vendor/metal-cpp/Metal.hpp"
 #    include <SDL3/SDL_metal.h>
 #else
 #    include <X11/Xlib.h>
@@ -13,7 +17,13 @@
 void* obtain_native_window(SDL_Window* window) {
 #if __APPLE__
     auto view = SDL_Metal_CreateView(window);
-    return SDL_Metal_GetLayer(view);
+    auto layer = SDL_Metal_GetLayer(view);
+
+    auto* ptr = (CA::MetalLayer*)layer;
+    // for some reason this doesnt seem to be working...
+    ptr->setDisplaySyncEnabled(true);
+
+    return layer;
 #else
     expect(SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0,
            "Unable to get current video driver");
@@ -31,7 +41,7 @@ void* obtain_native_window(SDL_Window* window) {
 }
 
 
-LocalPlatform::LocalPlatform(Config const& config) {
+LocalPlatform::LocalPlatform(FConfig const& config) {
 
     if (config.display.size()) { setenv("DISPLAY", config.display.c_str(), 1); }
 
@@ -46,6 +56,11 @@ LocalPlatform::LocalPlatform(Config const& config) {
     m_native_window = obtain_native_window(m_window_pointer);
 
     if (!SDL_GL_SetSwapInterval(-1)) { SDL_GL_SetSwapInterval(1); }
+
+    int actual_interval = 0;
+    SDL_GL_GetSwapInterval(&actual_interval);
+
+    spdlog::info("Set GL swap interval: {}", actual_interval);
 }
 
 LocalPlatform::~LocalPlatform() {

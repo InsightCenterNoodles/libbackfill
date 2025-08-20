@@ -1,17 +1,12 @@
 #pragma once
 
+#include "config.h"
+
 #include <math/TVecHelpers.h>
 #include <math/mat4.h>
 #include <math/norm.h>
 
 namespace proj {
-
-struct ScreenDesc {
-    filament::math::double3 lower_left;
-    filament::math::double3 lower_right;
-    filament::math::double3 upper_right;
-};
-
 
 void init(ScreenDesc);
 

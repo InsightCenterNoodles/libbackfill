@@ -12,7 +12,7 @@ class LocalPlatform {
 public:
     DISABLE_MOVE_COPY(LocalPlatform);
 
-    LocalPlatform(Config const& config);
+    LocalPlatform(FConfig const& config);
 
     ~LocalPlatform();
 

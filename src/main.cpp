@@ -1,317 +1,375 @@
-#include <filament/Camera.h>
-#include <filament/Engine.h>
-#include <filament/IndexBuffer.h>
-#include <filament/LightManager.h>
-#include <filament/Material.h>
-#include <filament/RenderableManager.h>
-#include <filament/Renderer.h>
-#include <filament/Scene.h>
-#include <filament/Skybox.h>
-#include <filament/SwapChain.h>
-#include <filament/TransformManager.h>
-#include <filament/VertexBuffer.h>
-#include <filament/View.h>
-#include <filament/Viewport.h>
 
-#include <backend/BufferDescriptor.h>
+#include <span>
+#include <spdlog/spdlog.h>
 
-#include <utils/EntityManager.h>
+#include "api.h"
 
-#include "config.h"
-#include "generated.h"
-#include "geometry.h"
-#include "projection.h"
-#include "renderstate.h"
+// for testing only
+#include <math/vec3.h>
 
-#include "SDL3/SDL_events.h"
-
-
-#include <chrono>
-
-
-struct State {
-    RenderState m_state;
-
-    std::shared_ptr<LocalVertexBuffer> m_verts;
-    std::shared_ptr<LocalIndexBuffer>  m_index;
-
-    State(Config const& config) : m_state(config) { }
-
-    void initial_content() {
-        auto* engine = (filament::Engine*)m_state.engine();
-        auto* scene  = m_state.scene();
-        auto* view   = m_state.view();
-
-        auto& transform = engine->getTransformManager();
-
-        auto* skybox = filament::Skybox::Builder()
-                           .color({ 0.1, 0.125, 0.25, 1.0 })
-                           .build(*engine);
-        scene->setSkybox(skybox);
-        view->setPostProcessingEnabled(true);
-        // view->setPostProcessingEnabled(false);
-
-        m_verts = std::make_shared<LocalVertexBuffer>(engine, sphere_verts());
-        m_index = std::make_shared<LocalIndexBuffer>(engine, sphere_index());
-
-        auto* mat =
-            filament::Material::Builder()
-                .package(generated::get_primaryinstancelit_matbin().data(),
-                         generated::get_primaryinstancelit_matbin().size())
-                .build(*engine);
-
-        // std::vector<filament::Material::ParameterInfo> mat_info(128);
-
-        // mat_info.reserve(mat->getParameters(mat_info.data(),
-        // mat_info.size()));
-
-        // for (auto const& param : mat_info) {
-        //     spdlog::debug("Paramter {} : {} {}",
-        //                   param.name,
-        //                   (int)param.type,
-        //                   param.count);
-        // }
-
-        auto* mat_instance = mat->getDefaultInstance();
-        mat_instance->setParameter(
-            "baseColor", filament::RgbaType::LINEAR, { 1.0, 1.0, 1.0, 1.0 });
-        mat_instance->setParameter("roughness", 0.3f);
-        mat_instance->setParameter("metallic", 1.0f);
-
-
-        std::vector<filament::math::mat4f> instances;
-
-        auto random_num = []() {
-            return ((float)rand() / float(RAND_MAX)) * 2.0 - 1.0;
-        };
-
-        for (auto i = 0; i < 128; i++) {
-            auto at = filament::math::float4 {
-                random_num() * 5, random_num() * 5, random_num() * 5, 1.0
-            };
-            instances.emplace_back(filament::math::mat4f {
-                at,
-                filament::math::float4 { 0, 0, 0, 1 },
-                filament::math::float4 { 0.5, 0.5, 0.5, 0 },
-                filament::math::float4 {},
-            });
-        }
-
-        mat_instance->setParameter(
-            "inst_data", instances.data(), instances.size());
-
-        auto renderable = m_state.manager().create();
-        scene->addEntity(renderable);
-
-        auto& rcm = engine->getRenderableManager();
-
-        filament::RenderableManager::Builder(1)
-            .boundingBox({ { -100, -100, -100 }, { 100, 100, 100 } })
-            .instances(instances.size())
-            .material(0, mat_instance)
-            .geometry(0,
-                      filament::RenderableManager::PrimitiveType::TRIANGLES,
-                      m_verts->vertex_buffer(),
-                      m_index->index_buffer(),
-                      0,
-                      m_index->index_count())
-            .castShadows(true)
-            .build(*engine, renderable);
-
-        if (false) {
-            utils::Entity sun = utils::EntityManager::get().create();
-
-            filament::LightManager::Builder(filament::LightManager::Type::SUN)
-                .intensity(100000.0f)
-                .color({ 0, 1, 0 })
-                .castShadows(true)
-                .build(*engine, sun);
-            scene->addEntity(sun);
-        }
-
-        constexpr float intensity = 1200000.0f;
-
-        struct Spec {
-            filament::math::float3 position;
-            filament::math::float3 direction; // normalized
-            filament::LinearColor  color;
-            float                  intensity; // lumens
-            float                  falloff;   // meters
-            float                  innerDeg, outerDeg;
-        } specs[] = {
-            // -X (red): place at +X, point toward -X (origin)
-            { { 10.0f, 0.0f, 0.0f },
-              normalize(filament::math::float3 { -1, 0, 0 }),
-              filament::LinearColor { 1, 0, 0 },
-              intensity,
-              30.0f,
-              20.0f,
-              25.0f },
-
-            // -Y (green): place above, point downward
-            { { 0.0f, 10.0f, 0.0f },
-              normalize(filament::math::float3 { 0, -1, 0 }),
-              filament::LinearColor { 0, 1, 0 },
-              intensity,
-              30.0f,
-              20.0f,
-              25.0f },
-
-            // -Z (blue): place in front, point toward -Z (origin if your scene
-            // is around (0,0,0))
-            { { 0.0f, 0.0f, 10.0f },
-              normalize(filament::math::float3 { 0, 0, -1 }),
-              filament::LinearColor { 0, 0, 1 },
-              intensity,
-              30.0f,
-              20.0f,
-              25.0f },
-        };
-
-        constexpr auto DEG_TO_RAD = (M_PI / 180);
-
-        auto& en = utils::EntityManager::get();
-
-        auto& tm = engine->getTransformManager();
-        auto& lm = engine->getLightManager();
-
-
-        for (const auto& s : specs) {
-            utils::Entity e = en.create();
-            filament::LightManager::Builder(filament::LightManager::Type::SPOT)
-                .intensity(s.intensity)
-                .color(s.color)
-                .falloff(s.falloff)
-                .direction(s.direction)
-                .spotLightCone(DEG_TO_RAD * (s.innerDeg),
-                               DEG_TO_RAD * (s.outerDeg))
-                .castShadows(true)
-                .build(*engine, e);
-
-            // place the light
-            if (auto inst = tm.getInstance(e)) {
-                tm.setTransform(inst,
-                                filament::math::mat4f::translation(s.position));
-            } else {
-                tm.create(
-                    e, {}, filament::math::mat4f::translation(s.position));
-            }
-
-            // (optional) set direction again post-build, in case you animate
-            // later
-            if (auto li = lm.getInstance(e)) {
-                lm.setDirection(li, s.direction);
-            }
-
-            scene->addEntity(e);
-        }
+template <>
+struct fmt::formatter<float4> {
+    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
+        return ctx.end();
     }
 
-    void run() {
-        // auto sdl_window = state.m_window.m_window.get();
-
-        // auto renderer = state.m_window.m_renderer.get();
-        //  auto swap_chain = renderer->get
-
-        auto* engine     = (filament::Engine*)m_state.engine();
-        auto* renderer   = m_state.renderer().renderer();
-        auto* swap_chain = m_state.renderer().swap_chain();
-
-
-        bool closed = false;
-
-        auto since_last_frame = std::chrono::high_resolution_clock::now();
-
-        float head_offset = 0;
-
-        while (!closed) {
-            if (!UTILS_HAS_THREADING) { engine->execute(); }
-
-            // do animation here
-
-            // process events
-
-            SDL_Event event;
-
-            while (SDL_PollEvent(&event)) {
-                switch (event.type) {
-                case SDL_EVENT_QUIT: closed = true; break;
-                case SDL_EVENT_KEY_DOWN:
-                    if (event.key.scancode == SDL_SCANCODE_ESCAPE) {
-                        closed = true;
-                    }
-                    break;
-                }
-            }
-
-            auto world_to_screen_matrix =
-                proj::compute_world_to_screen_matrix();
-
-            float near = 0.1;
-            float far  = 1000;
-
-            float new_head_x = std::sin(head_offset) * 2.0 - 1;
-            head_offset += .00001;
-
-            filament::math::float3 head_pos = { new_head_x, 1.5, 5 };
-            filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
-
-
-            { // new way
-
-                auto H = filament::math::mat4f::translation(head_pos) *
-                         filament::math::mat4f(head_rot);
-
-                auto P = proj::compute_off_axis_projection(
-                    world_to_screen_matrix,
-                    head_pos,
-                    filament::math::quat(head_rot),
-                    true,
-                    near,
-                    far);
-
-
-                auto V       = world_to_screen_matrix;
-                auto V_prime = V * inverse(H);
-
-                auto C = inverse(V_prime);
-
-
-                m_state.camera()->setModelMatrix(C);
-                m_state.camera()->setCustomProjection(P, near, far);
-
-
-                // evaluate(model, VP);
-            }
-
-            // exit(0);
-
-
-            if (renderer->beginFrame(swap_chain)) {
-                renderer->render(m_state.view());
-                renderer->endFrame();
-            }
-        }
+    template <typename FormatContext>
+    auto format(float4 const& input, FormatContext& ctx) const
+        -> decltype(ctx.out()) {
+        return format_to(
+            ctx.out(), "({} {} {} {})", input.x, input.y, input.z, input.w);
     }
 };
 
+template <>
+struct fmt::formatter<mat4> {
+    constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
+        return ctx.end();
+    }
+
+    template <typename FormatContext>
+    auto format(mat4 const& input, FormatContext& ctx) const
+        -> decltype(ctx.out()) {
+        return format_to(ctx.out(),
+                         "(a={}, b={}, c={}, d={})",
+                         input.a,
+                         input.b,
+                         input.c,
+                         input.d);
+    }
+};
+
+constexpr float3 SPHERE_POS[] = {
+    { 0.000000, -1.000000, 0.000000 },   { 0.723607, -0.447220, 0.525725 },
+    { -0.276388, -0.447220, 0.850649 },  { -0.894426, -0.447216, 0.000000 },
+    { -0.276388, -0.447220, -0.850649 }, { 0.723607, -0.447220, -0.525725 },
+    { 0.276388, 0.447220, 0.850649 },    { -0.723607, 0.447220, 0.525725 },
+    { -0.723607, 0.447220, -0.525725 },  { 0.276388, 0.447220, -0.850649 },
+    { 0.894426, 0.447216, 0.000000 },    { 0.000000, 1.000000, 0.000000 },
+    { -0.232822, -0.657519, 0.716563 },  { -0.162456, -0.850654, 0.499995 },
+    { -0.077607, -0.967950, 0.238853 },  { 0.203181, -0.967950, 0.147618 },
+    { 0.425323, -0.850654, 0.309011 },   { 0.609547, -0.657519, 0.442856 },
+    { 0.531941, -0.502302, 0.681712 },   { 0.262869, -0.525738, 0.809012 },
+    { -0.029639, -0.502302, 0.864184 },  { 0.812729, -0.502301, -0.295238 },
+    { 0.850648, -0.525736, 0.000000 },   { 0.812729, -0.502301, 0.295238 },
+    { 0.203181, -0.967950, -0.147618 },  { 0.425323, -0.850654, -0.309011 },
+    { 0.609547, -0.657519, -0.442856 },  { -0.753442, -0.657515, 0.000000 },
+    { -0.525730, -0.850652, 0.000000 },  { -0.251147, -0.967949, 0.000000 },
+    { -0.483971, -0.502302, 0.716565 },  { -0.688189, -0.525736, 0.499997 },
+    { -0.831051, -0.502299, 0.238853 },  { -0.232822, -0.657519, -0.716563 },
+    { -0.162456, -0.850654, -0.499995 }, { -0.077607, -0.967950, -0.238853 },
+    { -0.831051, -0.502299, -0.238853 }, { -0.688189, -0.525736, -0.499997 },
+    { -0.483971, -0.502302, -0.716565 }, { -0.029639, -0.502302, -0.864184 },
+    { 0.262869, -0.525738, -0.809012 },  { 0.531941, -0.502302, -0.681712 },
+    { 0.956626, 0.251149, 0.147618 },    { 0.951058, -0.000000, 0.309013 },
+    { 0.860698, -0.251151, 0.442858 },   { 0.860698, -0.251151, -0.442858 },
+    { 0.951058, 0.000000, -0.309013 },   { 0.956626, 0.251149, -0.147618 },
+    { 0.155215, 0.251152, 0.955422 },    { 0.000000, -0.000000, 1.000000 },
+    { -0.155215, -0.251152, 0.955422 },  { 0.687159, -0.251152, 0.681715 },
+    { 0.587786, 0.000000, 0.809017 },    { 0.436007, 0.251152, 0.864188 },
+    { -0.860698, 0.251151, 0.442858 },   { -0.951058, -0.000000, 0.309013 },
+    { -0.956626, -0.251149, 0.147618 },  { -0.436007, -0.251152, 0.864188 },
+    { -0.587786, 0.000000, 0.809017 },   { -0.687159, 0.251152, 0.681715 },
+    { -0.687159, 0.251152, -0.681715 },  { -0.587786, -0.000000, -0.809017 },
+    { -0.436007, -0.251152, -0.864188 }, { -0.956626, -0.251149, -0.147618 },
+    { -0.951058, 0.000000, -0.309013 },  { -0.860698, 0.251151, -0.442858 },
+    { 0.436007, 0.251152, -0.864188 },   { 0.587786, -0.000000, -0.809017 },
+    { 0.687159, -0.251152, -0.681715 },  { -0.155215, -0.251152, -0.955422 },
+    { 0.000000, 0.000000, -1.000000 },   { 0.155215, 0.251152, -0.955422 },
+    { 0.831051, 0.502299, 0.238853 },    { 0.688189, 0.525736, 0.499997 },
+    { 0.483971, 0.502302, 0.716565 },    { 0.029639, 0.502302, 0.864184 },
+    { -0.262869, 0.525738, 0.809012 },   { -0.531941, 0.502302, 0.681712 },
+    { -0.812729, 0.502301, 0.295238 },   { -0.850648, 0.525736, 0.000000 },
+    { -0.812729, 0.502301, -0.295238 },  { -0.531941, 0.502302, -0.681712 },
+    { -0.262869, 0.525738, -0.809012 },  { 0.029639, 0.502302, -0.864184 },
+    { 0.483971, 0.502302, -0.716565 },   { 0.688189, 0.525736, -0.499997 },
+    { 0.831051, 0.502299, -0.238853 },   { 0.077607, 0.967950, 0.238853 },
+    { 0.162456, 0.850654, 0.499995 },    { 0.232822, 0.657519, 0.716563 },
+    { 0.753442, 0.657515, 0.000000 },    { 0.525730, 0.850652, 0.000000 },
+    { 0.251147, 0.967949, 0.000000 },    { -0.203181, 0.967950, 0.147618 },
+    { -0.425323, 0.850654, 0.309011 },   { -0.609547, 0.657519, 0.442856 },
+    { -0.203181, 0.967950, -0.147618 },  { -0.425323, 0.850654, -0.309011 },
+    { -0.609547, 0.657519, -0.442856 },  { 0.077607, 0.967950, -0.238853 },
+    { 0.162456, 0.850654, -0.499995 },   { 0.232822, 0.657519, -0.716563 },
+    { 0.361800, 0.894429, -0.262863 },   { 0.638194, 0.723610, -0.262864 },
+    { 0.447209, 0.723612, -0.525728 },   { -0.138197, 0.894430, -0.425319 },
+    { -0.052790, 0.723612, -0.688185 },  { -0.361804, 0.723612, -0.587778 },
+    { -0.447210, 0.894429, 0.000000 },   { -0.670817, 0.723611, -0.162457 },
+    { -0.670817, 0.723611, 0.162457 },   { -0.138197, 0.894430, 0.425319 },
+    { -0.361804, 0.723612, 0.587778 },   { -0.052790, 0.723612, 0.688185 },
+    { 0.361800, 0.894429, 0.262863 },    { 0.447209, 0.723612, 0.525728 },
+    { 0.638194, 0.723610, 0.262864 },    { 0.861804, 0.276396, -0.425322 },
+    { 0.809019, 0.000000, -0.587782 },   { 0.670821, 0.276397, -0.688189 },
+    { -0.138199, 0.276397, -0.951055 },  { -0.309016, -0.000000, -0.951057 },
+    { -0.447215, 0.276397, -0.850649 },  { -0.947213, 0.276396, -0.162458 },
+    { -1.000000, 0.000001, 0.000000 },   { -0.947213, 0.276397, 0.162458 },
+    { -0.447216, 0.276397, 0.850648 },   { -0.309017, -0.000001, 0.951056 },
+    { -0.138199, 0.276397, 0.951055 },   { 0.670820, 0.276396, 0.688190 },
+    { 0.809019, -0.000002, 0.587783 },   { 0.861804, 0.276394, 0.425323 },
+    { 0.309017, -0.000000, -0.951056 },  { 0.447216, -0.276398, -0.850648 },
+    { 0.138199, -0.276398, -0.951055 },  { -0.809018, -0.000000, -0.587783 },
+    { -0.670819, -0.276397, -0.688191 }, { -0.861803, -0.276396, -0.425324 },
+    { -0.809018, 0.000000, 0.587783 },   { -0.861803, -0.276396, 0.425324 },
+    { -0.670819, -0.276397, 0.688191 },  { 0.309017, 0.000000, 0.951056 },
+    { 0.138199, -0.276398, 0.951055 },   { 0.447216, -0.276398, 0.850648 },
+    { 1.000000, 0.000000, 0.000000 },    { 0.947213, -0.276396, 0.162458 },
+    { 0.947213, -0.276396, -0.162458 },  { 0.361803, -0.723612, -0.587779 },
+    { 0.138197, -0.894429, -0.425321 },  { 0.052789, -0.723611, -0.688186 },
+    { -0.447211, -0.723612, -0.525727 }, { -0.361801, -0.894429, -0.262863 },
+    { -0.638195, -0.723609, -0.262863 }, { -0.638195, -0.723609, 0.262864 },
+    { -0.361801, -0.894428, 0.262864 },  { -0.447211, -0.723610, 0.525729 },
+    { 0.670817, -0.723611, -0.162457 },  { 0.670818, -0.723610, 0.162458 },
+    { 0.447211, -0.894428, 0.000001 },   { 0.052790, -0.723612, 0.688185 },
+    { 0.138199, -0.894429, 0.425321 },   { 0.361805, -0.723611, 0.587779 },
+};
+
+constexpr ushort3 SPHERE_INDEX[] = {
+    { 0, 15, 14 },     { 1, 17, 23 },     { 0, 14, 29 },     { 0, 29, 35 },
+    { 0, 35, 24 },     { 1, 23, 44 },     { 2, 20, 50 },     { 3, 32, 56 },
+    { 4, 38, 62 },     { 5, 41, 68 },     { 1, 44, 51 },     { 2, 50, 57 },
+    { 3, 56, 63 },     { 4, 62, 69 },     { 5, 68, 45 },     { 6, 74, 89 },
+    { 7, 77, 95 },     { 8, 80, 98 },     { 9, 83, 101 },    { 10, 86, 90 },
+    { 92, 99, 11 },    { 91, 102, 92 },   { 90, 103, 91 },   { 92, 102, 99 },
+    { 102, 100, 99 },  { 91, 103, 102 },  { 103, 104, 102 }, { 102, 104, 100 },
+    { 104, 101, 100 }, { 90, 86, 103 },   { 86, 85, 103 },   { 103, 85, 104 },
+    { 85, 84, 104 },   { 104, 84, 101 },  { 84, 9, 101 },    { 99, 96, 11 },
+    { 100, 105, 99 },  { 101, 106, 100 }, { 99, 105, 96 },   { 105, 97, 96 },
+    { 100, 106, 105 }, { 106, 107, 105 }, { 105, 107, 97 },  { 107, 98, 97 },
+    { 101, 83, 106 },  { 83, 82, 106 },   { 106, 82, 107 },  { 82, 81, 107 },
+    { 107, 81, 98 },   { 81, 8, 98 },     { 96, 93, 11 },    { 97, 108, 96 },
+    { 98, 109, 97 },   { 96, 108, 93 },   { 108, 94, 93 },   { 97, 109, 108 },
+    { 109, 110, 108 }, { 108, 110, 94 },  { 110, 95, 94 },   { 98, 80, 109 },
+    { 80, 79, 109 },   { 109, 79, 110 },  { 79, 78, 110 },   { 110, 78, 95 },
+    { 78, 7, 95 },     { 93, 87, 11 },    { 94, 111, 93 },   { 95, 112, 94 },
+    { 93, 111, 87 },   { 111, 88, 87 },   { 94, 112, 111 },  { 112, 113, 111 },
+    { 111, 113, 88 },  { 113, 89, 88 },   { 95, 77, 112 },   { 77, 76, 112 },
+    { 112, 76, 113 },  { 76, 75, 113 },   { 113, 75, 89 },   { 75, 6, 89 },
+    { 87, 92, 11 },    { 88, 114, 87 },   { 89, 115, 88 },   { 87, 114, 92 },
+    { 114, 91, 92 },   { 88, 115, 114 },  { 115, 116, 114 }, { 114, 116, 91 },
+    { 116, 90, 91 },   { 89, 74, 115 },   { 74, 73, 115 },   { 115, 73, 116 },
+    { 73, 72, 116 },   { 116, 72, 90 },   { 72, 10, 90 },    { 47, 86, 10 },
+    { 46, 117, 47 },   { 45, 118, 46 },   { 47, 117, 86 },   { 117, 85, 86 },
+    { 46, 118, 117 },  { 118, 119, 117 }, { 117, 119, 85 },  { 119, 84, 85 },
+    { 45, 68, 118 },   { 68, 67, 118 },   { 118, 67, 119 },  { 67, 66, 119 },
+    { 119, 66, 84 },   { 66, 9, 84 },     { 71, 83, 9 },     { 70, 120, 71 },
+    { 69, 121, 70 },   { 71, 120, 83 },   { 120, 82, 83 },   { 70, 121, 120 },
+    { 121, 122, 120 }, { 120, 122, 82 },  { 122, 81, 82 },   { 69, 62, 121 },
+    { 62, 61, 121 },   { 121, 61, 122 },  { 61, 60, 122 },   { 122, 60, 81 },
+    { 60, 8, 81 },     { 65, 80, 8 },     { 64, 123, 65 },   { 63, 124, 64 },
+    { 65, 123, 80 },   { 123, 79, 80 },   { 64, 124, 123 },  { 124, 125, 123 },
+    { 123, 125, 79 },  { 125, 78, 79 },   { 63, 56, 124 },   { 56, 55, 124 },
+    { 124, 55, 125 },  { 55, 54, 125 },   { 125, 54, 78 },   { 54, 7, 78 },
+    { 59, 77, 7 },     { 58, 126, 59 },   { 57, 127, 58 },   { 59, 126, 77 },
+    { 126, 76, 77 },   { 58, 127, 126 },  { 127, 128, 126 }, { 126, 128, 76 },
+    { 128, 75, 76 },   { 57, 50, 127 },   { 50, 49, 127 },   { 127, 49, 128 },
+    { 49, 48, 128 },   { 128, 48, 75 },   { 48, 6, 75 },     { 53, 74, 6 },
+    { 52, 129, 53 },   { 51, 130, 52 },   { 53, 129, 74 },   { 129, 73, 74 },
+    { 52, 130, 129 },  { 130, 131, 129 }, { 129, 131, 73 },  { 131, 72, 73 },
+    { 51, 44, 130 },   { 44, 43, 130 },   { 130, 43, 131 },  { 43, 42, 131 },
+    { 131, 42, 72 },   { 42, 10, 72 },    { 66, 71, 9 },     { 67, 132, 66 },
+    { 68, 133, 67 },   { 66, 132, 71 },   { 132, 70, 71 },   { 67, 133, 132 },
+    { 133, 134, 132 }, { 132, 134, 70 },  { 134, 69, 70 },   { 68, 41, 133 },
+    { 41, 40, 133 },   { 133, 40, 134 },  { 40, 39, 134 },   { 134, 39, 69 },
+    { 39, 4, 69 },     { 60, 65, 8 },     { 61, 135, 60 },   { 62, 136, 61 },
+    { 60, 135, 65 },   { 135, 64, 65 },   { 61, 136, 135 },  { 136, 137, 135 },
+    { 135, 137, 64 },  { 137, 63, 64 },   { 62, 38, 136 },   { 38, 37, 136 },
+    { 136, 37, 137 },  { 37, 36, 137 },   { 137, 36, 63 },   { 36, 3, 63 },
+    { 54, 59, 7 },     { 55, 138, 54 },   { 56, 139, 55 },   { 54, 138, 59 },
+    { 138, 58, 59 },   { 55, 139, 138 },  { 139, 140, 138 }, { 138, 140, 58 },
+    { 140, 57, 58 },   { 56, 32, 139 },   { 32, 31, 139 },   { 139, 31, 140 },
+    { 31, 30, 140 },   { 140, 30, 57 },   { 30, 2, 57 },     { 48, 53, 6 },
+    { 49, 141, 48 },   { 50, 142, 49 },   { 48, 141, 53 },   { 141, 52, 53 },
+    { 49, 142, 141 },  { 142, 143, 141 }, { 141, 143, 52 },  { 143, 51, 52 },
+    { 50, 20, 142 },   { 20, 19, 142 },   { 142, 19, 143 },  { 19, 18, 143 },
+    { 143, 18, 51 },   { 18, 1, 51 },     { 42, 47, 10 },    { 43, 144, 42 },
+    { 44, 145, 43 },   { 42, 144, 47 },   { 144, 46, 47 },   { 43, 145, 144 },
+    { 145, 146, 144 }, { 144, 146, 46 },  { 146, 45, 46 },   { 44, 23, 145 },
+    { 23, 22, 145 },   { 145, 22, 146 },  { 22, 21, 146 },   { 146, 21, 45 },
+    { 21, 5, 45 },     { 26, 41, 5 },     { 25, 147, 26 },   { 24, 148, 25 },
+    { 26, 147, 41 },   { 147, 40, 41 },   { 25, 148, 147 },  { 148, 149, 147 },
+    { 147, 149, 40 },  { 149, 39, 40 },   { 24, 35, 148 },   { 35, 34, 148 },
+    { 148, 34, 149 },  { 34, 33, 149 },   { 149, 33, 39 },   { 33, 4, 39 },
+    { 33, 38, 4 },     { 34, 150, 33 },   { 35, 151, 34 },   { 33, 150, 38 },
+    { 150, 37, 38 },   { 34, 151, 150 },  { 151, 152, 150 }, { 150, 152, 37 },
+    { 152, 36, 37 },   { 35, 29, 151 },   { 29, 28, 151 },   { 151, 28, 152 },
+    { 28, 27, 152 },   { 152, 27, 36 },   { 27, 3, 36 },     { 27, 32, 3 },
+    { 28, 153, 27 },   { 29, 154, 28 },   { 27, 153, 32 },   { 153, 31, 32 },
+    { 28, 154, 153 },  { 154, 155, 153 }, { 153, 155, 31 },  { 155, 30, 31 },
+    { 29, 14, 154 },   { 14, 13, 154 },   { 154, 13, 155 },  { 13, 12, 155 },
+    { 155, 12, 30 },   { 12, 2, 30 },     { 21, 26, 5 },     { 22, 156, 21 },
+    { 23, 157, 22 },   { 21, 156, 26 },   { 156, 25, 26 },   { 22, 157, 156 },
+    { 157, 158, 156 }, { 156, 158, 25 },  { 158, 24, 25 },   { 23, 17, 157 },
+    { 17, 16, 157 },   { 157, 16, 158 },  { 16, 15, 158 },   { 158, 15, 24 },
+    { 15, 0, 24 },     { 12, 20, 2 },     { 13, 159, 12 },   { 14, 160, 13 },
+    { 12, 159, 20 },   { 159, 19, 20 },   { 13, 160, 159 },  { 160, 161, 159 },
+    { 159, 161, 19 },  { 161, 18, 19 },   { 14, 15, 160 },   { 15, 16, 160 },
+    { 160, 16, 161 },  { 16, 17, 161 },   { 161, 17, 18 },   { 17, 1, 18 },
+};
+
+using namespace filament;
+
+static std::vector<FPackedVertex> make_sphere() {
+    std::vector<FVertexPNU> ret;
+    ret.resize(std::size(SPHERE_POS));
+
+    for (int i = 0; i < ret.size(); i++) {
+        auto const& p = SPHERE_POS[i];
+
+        auto position = p;
+        auto normal =
+            normalize(math::float3(position.x, position.y, position.z));
+
+        ret[i] = FVertexPNU {
+            .position = position,
+            .normal   = float3 { .x = normal.x, .y = normal.y, .z = normal.z },
+            .uv       = { 0, 0 },
+        };
+    }
+
+    std::vector<FPackedVertex> out;
+    out.resize(ret.size());
+
+
+    pack_vertex(ret.data(),
+                ret.size(),
+                SPHERE_INDEX,
+                std::size(SPHERE_INDEX),
+                out.data());
+
+    return out;
+}
+
+void setup_lights(FSession* session) {
+    spdlog::info("Starting up testing lights...");
+
+    constexpr float intensity = 1200000.0f;
+
+    struct Spec {
+        float3 position;
+        float3 direction; // normalized
+        FColor color;
+        float  intensity; // lumens
+        float  falloff;   // meters
+        float  innerDeg, outerDeg;
+    } specs[] = {
+        // -X (red): place at +X, point toward -X (origin)
+        { { 10.0f, 0.0f, 0.0f },
+          float3 { -1, 0, 0 },
+          { 1, 0, 0 },
+          intensity,
+          30.0f,
+          20.0f,
+          25.0f },
+
+        // -Y (green): place above, point downward
+        { { 0.0f, 10.0f, 0.0f },
+          { 0, -1, 0 },
+          { 0, 1, 0 },
+          intensity,
+          30.0f,
+          20.0f,
+          25.0f },
+
+        // -Z (blue): place in front, point toward -Z (origin if your scene
+        // is around (0,0,0))
+        { { 0.0f, 0.0f, 10.0f },
+          { 0, 0, -1 },
+          { 0, 0, 1 },
+          intensity,
+          30.0f,
+          20.0f,
+          25.0f },
+    };
+
+    constexpr auto DEG_TO_RAD = (M_PI / 180);
+
+
+    for (const auto& s : specs) {
+        spdlog::info("Adding light...");
+        auto entity = fs_new_entity(session);
+
+        auto light_config = flightconfig_init(SPOT);
+
+        flc_set_intensity(light_config, s.intensity);
+        flc_set_color(light_config, s.color);
+        flc_set_falloff(light_config, s.falloff);
+        flc_set_direction(light_config, s.direction);
+        flc_set_spot_cone(
+            light_config, DEG_TO_RAD * (s.innerDeg), DEG_TO_RAD * (s.outerDeg));
+        flc_set_shadows(light_config, true);
+
+        fs_add_light(session, entity, light_config);
+
+        flightconfig_destroy(light_config);
+
+        mat4 transform;
+        mat4_identity(&transform);
+        mat4_transform(&transform, s.position);
+
+        spdlog::info("Transform {}", transform);
+
+        fs_add_transform(session, entity, &transform);
+    }
+}
 
 int main() {
     spdlog::set_level(spdlog::level::debug);
 
-    proj::init(proj::ScreenDesc {
+    spdlog::info("Starting up...");
+
+    FScreenPlane plane {
         .lower_left  = { -2.5, 0, -1.768 },
         .lower_right = { 2.5, 0, -1.768 },
         .upper_right = { 2.5, 2.5, -1.768 },
-    });
-
-    auto config = Config {
-        .title = "Test Window",
     };
 
-    auto state = State(config);
+    auto* ptr = fconfig_init();
 
-    state.initial_content();
+    fconfig_set_title(ptr, "Test Window");
+    fconfig_set_screen(ptr, 1920, 1200);
+    fconfig_set_offaxis_plane(ptr, &plane);
 
-    state.run();
+    auto* session = fs_init(ptr);
+
+    fconfig_destroy(ptr);
+
+    fs_set_postprocess(session, true);
+
+    fs_set_skybox_color(session, { 0.1, 0.125, 0.25, 1.0 });
+
+    auto* mat = fmaterial_init(session, FMaterialConfig {});
+
+    fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
+    fmaterial_set_roughness_metallic(mat, .5, 1);
+
+    auto sphere = make_sphere();
+
+    auto vertex_span = std::span(sphere);
+
+    auto* vblob = fblob_init_copy((char const*)vertex_span.data(),
+                                  vertex_span.size_bytes());
+
+    auto* fblob = fblob_init_copy((char const*)SPHERE_INDEX,
+                                  std::size(SPHERE_INDEX) * sizeof(ushort3));
+
+    auto* mesh = fmesh_init(session,
+                            FBlobRef { .id = vblob },
+                            vertex_span.size(),
+                            FBlobRef { .id = fblob },
+                            std::size(SPHERE_INDEX) * 3,
+                            FMeshIndexType::U16,
+                            aabb {
+                                .minimum = { -1, -1, -1 },
+                                .maximum = { 1, 1, 1 },
+                            });
+
+    auto entity = fs_new_entity(session);
+
+    fs_add_renderable(session, entity, mesh, mat);
+
+    setup_lights(session);
+
+    while (fs_frame(session)) {
+        // Keep spinning
+    }
 }

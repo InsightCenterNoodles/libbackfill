@@ -7,6 +7,7 @@ namespace filament {
 class Engine;
 }
 
+
 class LocalEngine {
     filament::Engine* m_pointer;
 

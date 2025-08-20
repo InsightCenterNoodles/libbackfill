@@ -33,6 +33,8 @@ add_executable(ftest
     src/localengine.h src/localengine.cpp
     src/localrenderer.h src/localrenderer.cpp
     src/renderstate.h src/renderstate.cpp
+    src/api.h src/api.cpp
+    src/session.h src/session.cpp
 )
 
 # For dev experience ===========================================================
@@ -147,7 +149,6 @@ set(REQUIRED_LIBS
 find_and_set_filament_libs(ftest "${REQUIRED_LIBS}")
 
 if (NOT LINUX)
-    #target_link_libraries(ftest PRIVATE "-framework Metal -framework QuartzCore")
     target_link_libraries(ftest PRIVATE
         "-framework AVFoundation"
         "-framework CoreMedia"
