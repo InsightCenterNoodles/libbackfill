@@ -149,12 +149,7 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
                      generated::get_primaryinstancelit_matbin().size())
             .build(*engine()));
 
-    if (config.screen_info) {
-        proj::init(*config.screen_info);
-
-        m_use_offaxis = true;
-    }
-
+    m_offaxis_screen_info = config.screen_info;
 
     spdlog::info("Created new session");
 }
@@ -268,47 +263,21 @@ bool FSession::run_frame() {
     }
 
 
-    if (m_use_offaxis) { // new way
+    if (m_offaxis_screen_info) {
 
-        auto world_to_screen_matrix = proj::compute_world_to_screen_matrix();
+        auto const& screen_info = *m_offaxis_screen_info;
 
-        float near = 0.1;
-        float far  = 1000;
+        float near = 0.1f;
+        float far  = 1000.0f;
 
-        float new_head_x = std::sin(m_debug_head) * 2.0 - 1;
-        m_debug_head += .01;
+        float new_head_x = std::sin(m_debug_head) * 2.0f - 1.0f;
+        m_debug_head += 0.01f;
 
-        filament::math::float3 head_pos = { new_head_x, 1.5, 5 };
-        filament::math::quatf  head_rot = { 1.0, 0.0, 0.0, 0.0 };
+        filament::math::double3 head_pos = { new_head_x, 1.5f, 5.0f };
+        filament::math::quat    head_rot = { 1.0f, 0.0f, 0.0f, 0.0f };
 
-        auto use_offaxis = false;
-
-        auto H = filament::math::mat4f::translation(head_pos);
-        // filament::math::mat4f(head_rot);
-
-        auto P =
-            proj::compute_off_axis_projection(world_to_screen_matrix,
-                                              head_pos,
-                                              filament::math::quat(head_rot),
-                                              true,
-                                              near,
-                                              far);
-
-
-        auto V       = world_to_screen_matrix;
-        auto V_prime = V * inverse(H);
-
-        auto C = inverse(V_prime);
-
-
-        // spdlog::debug("model: {}", filament::math::mat4f(C));
-        // spdlog::debug("proj: {}", filament::math::mat4f(P));
-
-        camera()->setModelMatrix(C);
-        camera()->setCustomProjection(P, near, far);
-
-
-        // evaluate(model, VP);
+        proj::compute_off_axis_projection(
+            screen_info, head_pos, head_rot, true, near, far, camera());
     }
 
     // exit(0);

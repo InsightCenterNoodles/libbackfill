@@ -332,7 +332,7 @@ int main() {
 
     fconfig_set_title(ptr, "Test Window");
     fconfig_set_screen(ptr, 1920, 1200);
-    // fconfig_set_offaxis_plane(ptr, &plane);
+    fconfig_set_offaxis_plane(ptr, &plane);
 
     auto* session = fs_init(ptr);
 
@@ -345,7 +345,7 @@ int main() {
     auto* mat = fmaterial_init(session, FMaterialConfig {});
 
     fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
-    fmaterial_set_roughness_metallic(mat, .9, 1);
+    fmaterial_set_roughness_metallic(mat, .25, 1);
 
     auto sphere = make_sphere();
 

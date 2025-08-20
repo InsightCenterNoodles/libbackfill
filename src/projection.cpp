@@ -5,103 +5,79 @@
 
 using namespace filament::math;
 
-// Addition for quat * vec4
-template <typename T, typename U>
-inline constexpr details::TVec4<details::arithmetic_result_t<T, U>>
-operator*(const details::TQuaternion<T>& q, const details::TVec4<U>& v4) {
-    using R = details::arithmetic_result_t<T, U>;
-    // Rotate the xyz part via q * p * inverse(q), with p = (v, 0).
-    const auto rotated =
-        imaginary(q * details::TQuaternion<U>(v4.xyz, U(0)) * inverse(q));
-    return details::TVec4<R>(rotated, R(v4.w)); // keep w as-is
-}
-
-
 namespace proj {
 
-ScreenDesc& get_screen_desc() {
-    static ScreenDesc ret;
 
-    return ret;
-}
-
-void init(ScreenDesc screen_info) {
-    get_screen_desc() = screen_info;
-}
-
-mat4 compute_off_axis_projection(mat4 const&    world_to_screen_matrix,
-                                 double3 const& position,
-                                 quat const&    orientation,
-                                 bool           left_eye,
-                                 float          near,
-                                 float          far) {
+void compute_off_axis_projection(ScreenDesc const& screen_desc,
+                                 double3 const&    head_pos,
+                                 quat const&       head_rot,
+                                 bool              left_eye,
+                                 float             near,
+                                 float             far,
+                                 filament::Camera* camera) {
     assert(near > 0);
     assert(far > 0);
 
-    ScreenDesc desc = get_screen_desc();
+    auto H = mat4(head_rot) * mat4::translation(head_pos);
 
-    double4 E(0, 0, 0, 1.0);
-    double4 L(desc.lower_left, 1.0);
-    double4 H(desc.upper_right, 1.0);
+    float iod = left_eye ? 0.06f : -0.06f;
 
+    auto cam_right = normalize(float3 { H[0].x, H[0].y, H[0].z });
 
-    const float iod     = 0.06;
-    const float eye_sep = (left_eye ? iod : -iod);
+    auto H_eye = mat4f::translation(+0.5f * iod * cam_right) * H;
 
-    E[0] += eye_sep / 2.0;
+    // Set the camera transform
+    camera->setModelMatrix(H_eye);
 
-    E = orientation * E;
-    E = double4(position, 0) + E;
+    // Build off-axis projection from world to eye-space corners:
+    auto H_inv = inverse(H_eye);
 
-    E = world_to_screen_matrix * E;
-    H = world_to_screen_matrix * H;
-    L = world_to_screen_matrix * L;
+    // Screen corners in world space
 
-    const float width  = H[0] - L[0];
-    const float height = H[1] - L[1];
-
-
-    const float F = E[2] - far;
-    const float B = E[2] - near;
-
-    const float depth = B - F;
-
-    double4 c0 = double4((2.0 * E[2]) / width, 0, 0, 0);
-    double4 c1 = double4(0, (2.0 * E[2]) / height, 0, 0);
-    double4 c2 = double4((H[0] + L[0] - 2 * E[0]) / width,
-                         (H[1] + L[1] - 2 * E[1]) / height,
-                         (B + F - 2 * E[2]) / depth,
-                         -1);
-
-    double4 c3 = double4((-E[2] * (H[0] + L[0])) / width,
-                         (-E[2] * (H[1] + L[1])) / height,
-                         B - E[2] - (B * (B + F - 2 * E[2]) / depth),
-                         E[2]);
-
-    auto projection = mat4 { c0, c1, c2, c3 };
-
-    return projection;
-}
-
-mat4 compute_world_to_screen_matrix() {
-    ScreenDesc desc = get_screen_desc();
-
-    auto x_axis = normalize(desc.lower_right - desc.lower_left);
-
-    auto y_axis = normalize(desc.upper_right - desc.lower_right);
-
-    auto z_axis = normalize(cross(x_axis, y_axis));
-
-    auto world_to_screen_matrix = mat4 {
-        double4(x_axis, 0),
-        double4(y_axis, 0),
-        double4(z_axis, 0),
-        double4(desc.lower_left, 1),
+    float4 Lw = {
+        screen_desc.lower_left.x,
+        screen_desc.lower_left.y,
+        screen_desc.lower_left.z,
+        1.0f,
+    };
+    float4 Rw = {
+        screen_desc.lower_right.x,
+        screen_desc.lower_right.y,
+        screen_desc.lower_right.z,
+        1.0f,
+    };
+    float4 Uw = {
+        screen_desc.upper_right.x,
+        screen_desc.upper_right.y,
+        screen_desc.upper_right.z,
+        1.0f,
     };
 
-    world_to_screen_matrix = inverse(world_to_screen_matrix);
+    // Transform to eye space
+    auto Le = H_inv * Lw;
+    auto Re = H_inv * Rw;
+    auto Ue = H_inv * Uw;
 
-    return world_to_screen_matrix;
+    // Compute l/r/b/t in eye space at the near plane
+    auto toNear = [&](float4 p) {
+        float z = -p.z;
+        float s = near / z;
+        return float2 { p.x * s, p.y * s };
+    };
+
+    auto Ln = toNear(Le);
+    auto Rn = toNear(Re);
+    auto Un = toNear(Ue);
+
+    float left   = std::min(Ln.x, Rn.x);
+    float right  = std::max(Ln.x, Rn.x);
+    float bottom = std::min(Ln.y, Un.y);
+    float top    = std::max(Ln.y, Un.y);
+
+    // Build a standard frustum matrix from l/r/b/t/n/f
+    auto P = mat4::frustum(left, right, bottom, top, near, far);
+
+    camera->setCustomProjection(P, near, far);
 }
 
 } // namespace proj

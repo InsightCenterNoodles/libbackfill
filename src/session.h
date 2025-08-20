@@ -87,7 +87,8 @@ struct UsedMatMesh {
 class FSession : public RenderState {
     SkyboxPtr m_skybox;
 
-    bool  m_use_offaxis = false;
+    std::optional<ScreenDesc> m_offaxis_screen_info;
+
     float m_debug_head  = 0;
 
     std::vector<filament::Material*> m_materials;

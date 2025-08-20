@@ -2,22 +2,20 @@
 
 #include "config.h"
 
+#include <filament/Camera.h>
+
 #include <math/TVecHelpers.h>
 #include <math/mat4.h>
 #include <math/norm.h>
 
 namespace proj {
 
-void init(ScreenDesc);
-
-filament::math::mat4
-compute_off_axis_projection(filament::math::mat4 const& world_to_screen_matrix,
-                            filament::math::double3 const& position,
-                            filament::math::quat const&    orientation,
-                            bool                           left_eye,
-                            float                          near,
-                            float                          far);
-
-filament::math::mat4 compute_world_to_screen_matrix();
+void compute_off_axis_projection(ScreenDesc const&              screen_desc,
+                                 filament::math::double3 const& head_pos,
+                                 filament::math::quat const&    head_rot,
+                                 bool                           left_eye,
+                                 float                          near,
+                                 float                          far,
+                                 filament::Camera*              camera);
 
 } // namespace proj
