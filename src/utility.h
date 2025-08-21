@@ -204,10 +204,116 @@ UResource<T> make_wrapper(filament::Engine* engine, T* t) {
     return UResource<T>(t, ResourceDeleter<T> { .pointer = engine });
 }
 
-// template <class T>
-// struct EngineResourceWrapper {
-//     DISABLE_COPY(EngineResourceWrapper);
-//     filament::Engine* pointer = nullptr;
-//     EngineResourceWrapper(filament::Engine* p) : pointer(p) { }
-//     void operator()(T* p) { pointer->destroy(p); }
-// };
+// =============================================================================
+
+template <class T>
+class Owned;
+
+template <class T>
+class RefCounted {
+    // we put this first to allow casting of a RefCounted* to a T*;
+public:
+    T item;
+
+private:
+    mutable std::atomic<uint32_t> m_count = { 1 };
+
+    // hide the destructor
+    ~RefCounted() = default;
+
+public:
+    template <class... Args>
+    explicit RefCounted(Args&&... args) noexcept
+        : item(std::forward<Args>(args)...) {
+        // static_assert(offsetof(RefCounted, item) == 0);
+    }
+
+    void retain() const noexcept {
+        this->m_count.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void release() const noexcept {
+        // remember this pulls the LAST value.
+        if (this->m_count.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            delete this;
+        }
+    }
+
+    [[nodiscard]] Owned<T> borrow();
+};
+
+template <class T>
+class Owned {
+    RefCounted<T>* m_ptr = nullptr;
+
+    explicit Owned(RefCounted<T>* ptr) noexcept : m_ptr(ptr) { }
+
+public:
+    Owned() = default;
+
+    /// Adopts a refptr; it does NOT retain
+    [[nodiscard]] static Owned adopt(RefCounted<T>* p) noexcept {
+        return Owned(p);
+    }
+
+    /// Borrows a refptr; this is the one you want most of the time. RETAINS.
+    [[nodiscard]] static Owned retain(RefCounted<T>* p) noexcept {
+        if (p) p->retain();
+        return Owned(p);
+    }
+
+    Owned(Owned const& other) noexcept : m_ptr(other.m_ptr) {
+        if (m_ptr) m_ptr->retain();
+    }
+
+    Owned(Owned&& other) noexcept
+        : m_ptr(std::exchange(other.m_ptr, nullptr)) { }
+
+    Owned& operator=(Owned other) noexcept {
+        std::swap(other.m_ptr, m_ptr);
+        return *this;
+    }
+
+    ~Owned() noexcept {
+        if (m_ptr) m_ptr->release();
+    }
+
+    explicit operator bool() const noexcept { return !!m_ptr; }
+
+    /// Do NOT store these pointers! Use map if possible!
+    T*       get() noexcept { return (T*)m_ptr; }
+    T const* get() const noexcept { return (T*)m_ptr; }
+
+    T*       operator->() noexcept { return get(); }
+    T&       operator*() noexcept { return *get(); }
+    T const* operator->() const noexcept { return get(); }
+    T const& operator*() const noexcept { return *get(); }
+
+    RefCounted<T>* leak() noexcept { return std::exchange(m_ptr, nullptr); }
+};
+
+template <class T>
+[[nodiscard]] Owned<T> RefCounted<T>::borrow() {
+    return Owned<T>::retain(this);
+}
+
+template <class T, class... Args>
+[[nodiscard]] Owned<T> make_refcounted(Args&&... args) {
+    return Owned<T>::adopt(new RefCounted<T>(std::forward<Args>(args)...));
+}
+
+template <class T, class... Args>
+[[nodiscard]] auto* make_refcounted_unsafe(Args&&... args) {
+    return new RefCounted<T>(std::forward<Args>(args)...);
+}
+
+#define C_BRIDGE(CTYPE, CPPTYPE)                                               \
+    inline CPPTYPE* as_rc(CTYPE* ptr) {                                        \
+        return (CPPTYPE*)ptr;                                                  \
+    }                                                                          \
+    inline CPPTYPE const* as_rc(CTYPE const* ptr) {                            \
+        return (CPPTYPE const*)ptr;                                            \
+    }                                                                          \
+    inline CTYPE* from_rc(CPPTYPE* ptr) {                                      \
+        return (CTYPE*)ptr;                                                    \
+    }

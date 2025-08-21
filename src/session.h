@@ -20,10 +20,13 @@ enum class MaterialType {
 
 // =============================================================================
 
-struct FBlob : Bytes { };
+C_BRIDGE(FBlob, RefCounted<Bytes>);
 
-inline Bytes _ref_to_bytes(FBlobRef ref) {
-    return ref.id->subspan(ref.start, ref.length);
+// =============================================================================
+
+
+inline Bytes ref_to_bytes(FBlobRef ref) {
+    return as_rc(ref.id)->item.subspan(ref.start, ref.length);
 }
 
 // =============================================================================
@@ -49,6 +52,8 @@ public:
     LocalIndexBuffer const&  index() const { return m_index; }
     filament::Box const&     box() const { return m_box; }
 };
+
+C_BRIDGE(FMesh, RefCounted<FMeshContent>);
 
 // =============================================================================
 
@@ -76,12 +81,14 @@ public:
     operator filament::MaterialInstance*() const { return m_instance; }
 };
 
+C_BRIDGE(FMaterial, RefCounted<FMaterialContent>);
+
 // =============================================================================
 
 
 struct UsedMatMesh {
-    std::shared_ptr<FMaterialContent> material;
-    std::shared_ptr<FMeshContent>     mesh;
+    Owned<FMaterialContent> material;
+    Owned<FMeshContent>     mesh;
 };
 
 class FSession : public RenderState {
@@ -89,7 +96,8 @@ class FSession : public RenderState {
 
     std::optional<ScreenDesc> m_offaxis_screen_info;
 
-    float m_debug_head  = 0;
+    filament::math::float3 m_head_pos;
+    filament::math::quatf  m_head_rot;
 
     std::vector<filament::Material*> m_materials;
 
@@ -100,14 +108,16 @@ public:
 
     void set_skybox(SkyboxPtr);
 
+    void update_head(float3 pos, float4 quat);
+
     filament::MaterialInstance* new_instance_for_type(MaterialType);
 
     utils::Entity new_entity();
     void          delete_entity(utils::Entity);
 
     void add_renderable(utils::Entity,
-                        std::shared_ptr<FMeshContent> const&,
-                        std::shared_ptr<FMaterialContent> const&);
+                        RefCounted<FMeshContent>*,
+                        RefCounted<FMaterialContent>*);
 
     void del_renderable(utils::Entity);
 

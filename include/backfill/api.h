@@ -1,7 +1,8 @@
 #pragma once
 
-#include <climits>
 #include <cstdint>
+
+/// This API is SINGLE THREADED
 
 extern "C" {
 
@@ -14,6 +15,10 @@ struct FScreenPlane {
     double upper_right[3];
 };
 
+struct short4 {
+    int16_t x, y, z, w;
+};
+
 struct ushort2 {
     uint16_t x, y;
 };
@@ -21,6 +26,11 @@ struct ushort2 {
 struct ushort3 {
     uint16_t x, y, z;
 };
+
+struct uint3 {
+    uint32_t x, y, z;
+};
+
 
 struct float2 {
     float x, y;
@@ -34,10 +44,7 @@ struct float4 {
     float x, y, z, w;
 };
 
-struct short4 {
-    int16_t x, y, z, w;
-};
-
+/// Column major format
 struct mat4 {
     float4 a, b, c, d;
 };
@@ -47,8 +54,17 @@ struct aabb {
     float3 maximum;
 };
 
+// These functions are for debugging. It is assumed that another library will be
+// making matrices for you.
+
+/// Initialize a matrix to the indentity.
 void mat4_identity(mat4*);
-void mat4_transform(mat4*, float3);
+
+/// Append a translation to the given matrix.
+void mat4_translate(mat4*, float3);
+
+/// Overwrite a matrix with the context of the column-major array.
+void mat4_from_array(mat4* out, const float m[16]);
 
 // =============================================================================
 
@@ -77,25 +93,46 @@ struct FMaterial;
 
 // =============================================================================
 
-void pack_vertex(FVertexPNU const* source,
-                 uint32_t          vertex_count,
-                 ushort3 const*    index,
-                 uint32_t          index_count,
-                 FPackedVertex*    dest);
+void pack_vertex_u16(FVertexPNU const* source,
+                     uint32_t          vertex_count,
+                     ushort3 const*    index,
+                     uint32_t          index_count,
+                     FPackedVertex*    dest);
+
+void pack_vertex_u32(FVertexPNU const* source,
+                     uint32_t          vertex_count,
+                     uint3 const*      index,
+                     uint32_t          index_count,
+                     FPackedVertex*    dest);
 
 // =============================================================================
 
-/// Blobs are internallly refcounted. You MUST delete the one you create,
-/// but you can safely destroy it and other users should be ok.
+/// All types with a release_ use reference counting. You MUST release after an
+/// init. Init will create a pointer to an object with an RC of 1.
 
 FBlob* fblob_init_copy(char const* data, u64 byte_count);
-void   fblob_destroy(FBlob*);
+void   fblob_release(FBlob*);
 
 struct FBlobRef {
     FBlob* id;
-    u64    start  = 0;
-    u64    length = SIZE_T_MAX;
+    u64    start;
+    u64    length;
 };
+
+FBlobRef fblobref_whole(FBlob*);
+
+// =============================================================================
+
+enum ImageType { EXR };
+
+struct FTextureConfig;
+
+FTextureConfig* ftex_config_init();
+void            ftex_config_destroy(FTextureConfig*);
+
+void ftex_config_set_image_source(FTextureConfig*, FBlobRef, ImageType);
+void ftex_config_image_dimensions(FTextureConfig*, int w, int h);
+
 
 // =============================================================================
 
@@ -109,7 +146,7 @@ FMesh* fmesh_init(FSession*,
                   FMeshIndexType,
                   aabb bounding_box);
 
-void fmesh_destroy(FMesh*);
+void fmesh_release(FMesh*);
 
 // =============================================================================
 
@@ -121,17 +158,24 @@ void fmesh_destroy(FMesh*);
 // qx, qy, qz, uvy
 // sx, sy, sz, uvs
 
+enum MatConfigFlags {
+    MC_UNLIT = (1 << 0),
+};
+
 struct FMaterialConfig {
-    bool unlit : 1;
-    bool instanced : 1;
+    uint32_t mask;
+    uint32_t instance_count;
 };
 
 
-FMaterial* fmaterial_init(FSession*, FMaterialConfig flags);
-void       fmaterial_destroy(FMaterial*);
+FMaterial* fmaterial_init(FSession*, FMaterialConfig*);
+void       fmaterial_release(FMaterial*);
 
 void fmaterial_set_base_color(FMaterial*, FColor);
 void fmaterial_set_roughness_metallic(FMaterial*, float r, float m);
+
+/// We use one matrix per instance. The data is copied into a UBO, which means a
+/// limit of 1024 instances per material instance.
 void fmaterial_set_instances(FMaterial*, mat4* data, u64 count);
 
 // =============================================================================
@@ -148,7 +192,7 @@ void flc_set_color(FLightConfig*, FColor);
 void flc_set_falloff(FLightConfig*, float);
 void flc_set_direction(FLightConfig*, float3);
 void flc_set_spot_cone(FLightConfig*, float inner, float outer);
-void flc_set_shadows(FLightConfig*, bool);
+void flc_set_shadows(FLightConfig*, uint8_t);
 
 
 // =============================================================================
@@ -160,20 +204,24 @@ void fconfig_set_title(FConfig*, char const*);
 void fconfig_set_display(FConfig*, char const*);
 void fconfig_set_device(FConfig*, int);
 void fconfig_set_screen(FConfig*, int w, int h);
-void fconfig_set_offaxis_plane(FConfig*, FScreenPlane*);
+
+/// Enable off-axis mode using this screen plane.
+void fconfig_set_offaxis_plane(FConfig*, FScreenPlane const*);
 
 // =============================================================================
 
 FSession* fs_init(FConfig*);
 void      fs_destroy(FSession*);
 
-void fs_set_postprocess(FSession*, bool);
+void fs_set_postprocess(FSession*, uint8_t);
 
 void fs_set_skybox_color(FSession*, FColor);
 
+void fs_update_head(FSession*, float3 pos, float4 quat);
+
 /// Render a frame. Processes window events. Returns false if the window has
 /// been closed.
-bool fs_frame(FSession*);
+uint8_t fs_frame(FSession*);
 
 /// Create a new, blank, entity
 i32 fs_new_entity(FSession*);
@@ -186,9 +234,10 @@ void fs_add_renderable(FSession*, i32, FMesh*, FMaterial*);
 void fs_del_renderable(FSession*, i32);
 
 /// Set the transform of an entity
-void fs_add_transform(FSession*, i32, mat4 const*);
+void fs_set_transform(FSession*, i32, mat4 const*);
 
-/// Sets the parent, and CLEARS the local transform
+/// Sets the parent, and CLEARS/overwrites the childs current transform if there
+/// is one.
 void fs_set_parent(FSession*, i32 child, i32 parent);
 
 /// Add a light component to an entity. You may destroy or reuse the

@@ -234,11 +234,11 @@ static std::vector<FPackedVertex> make_sphere() {
     out.resize(ret.size());
 
 
-    pack_vertex(ret.data(),
-                ret.size(),
-                SPHERE_INDEX,
-                std::size(SPHERE_INDEX),
-                out.data());
+    pack_vertex_u16(ret.data(),
+                    ret.size(),
+                    SPHERE_INDEX,
+                    std::size(SPHERE_INDEX),
+                    out.data());
 
     return out;
 }
@@ -308,11 +308,11 @@ void setup_lights(FSession* session) {
 
         mat4 transform;
         mat4_identity(&transform);
-        mat4_transform(&transform, s.position);
+        mat4_translate(&transform, s.position);
 
         spdlog::info("Transform {}", transform);
 
-        fs_add_transform(session, entity, &transform);
+        fs_set_transform(session, entity, &transform);
     }
 }
 
@@ -342,7 +342,9 @@ int main() {
 
     fs_set_skybox_color(session, { 0.1, 0.125, 0.25, 1.0 });
 
-    auto* mat = fmaterial_init(session, FMaterialConfig {});
+    auto mat_config = FMaterialConfig {};
+
+    auto* mat = fmaterial_init(session, &mat_config);
 
     fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
     fmaterial_set_roughness_metallic(mat, .25, 1);
@@ -358,9 +360,9 @@ int main() {
                                   std::size(SPHERE_INDEX) * sizeof(ushort3));
 
     auto* mesh = fmesh_init(session,
-                            FBlobRef { .id = vblob },
+                            fblobref_whole(vblob),
                             vertex_span.size(),
-                            FBlobRef { .id = fblob },
+                            fblobref_whole(fblob),
                             std::size(SPHERE_INDEX) * 3,
                             FMeshIndexType::U16,
                             aabb {
@@ -376,14 +378,34 @@ int main() {
         // Move the entity up a bit
         mat4 transform;
         mat4_identity(&transform);
-        mat4_transform(&transform, { 0, 1.5, 0 });
+        mat4_translate(&transform, { 0, 1.5, 0 });
 
-        fs_add_transform(session, entity, &transform);
+        fs_set_transform(session, entity, &transform);
     }
 
     setup_lights(session);
 
+    float debug_head = 0;
+
+    auto prev_frame_time = std::chrono::high_resolution_clock::now();
+
     while (fs_frame(session)) {
         // Keep spinning
+
+        auto frame_time = std::chrono::high_resolution_clock::now();
+
+        auto duration =
+            std::chrono::duration<double>(frame_time - prev_frame_time).count();
+
+        float new_head_x = std::sin(debug_head) * 2.0f - 1.0f;
+
+        float3 head_pos = { new_head_x, 1.5f, 5.0f };
+        float4 head_rot = { 0.0f, 0.0f, 0.0f, 1.0f };
+
+        fs_update_head(session, head_pos, head_rot);
+
+        debug_head += 1.0f * duration;
+
+        prev_frame_time = frame_time;
     }
 }

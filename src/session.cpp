@@ -92,9 +92,9 @@ FMeshContent::FMeshContent(FSession*      session,
                            FMeshIndexType type,
                            aabb           bounding_box)
     : m_engine(session->engine()),
-      m_verts(m_engine, _ref_to_bytes(vertex_reference), vertex_count),
+      m_verts(m_engine, ref_to_bytes(vertex_reference), vertex_count),
       m_index(m_engine,
-              _ref_to_bytes(index_reference),
+              ref_to_bytes(index_reference),
               index_count,
               translate_fmesh_index_type(type)) {
 
@@ -159,6 +159,10 @@ void FSession::set_skybox(SkyboxPtr ptr) {
     scene()->setSkybox(ptr.get());
 }
 
+void FSession::update_head(float3 pos, float4 quat) {
+    m_head_pos = { pos.x, pos.y, pos.z };
+    m_head_rot = { quat.w, quat.x, quat.y, quat.z };
+}
 
 filament::MaterialInstance* FSession::new_instance_for_type(MaterialType type) {
     return m_materials.at((size_t)type)->createInstance();
@@ -178,26 +182,29 @@ void FSession::delete_entity(utils::Entity e) {
     m_bound_render_resources.erase(utils::Entity::smuggle(e));
 }
 
-void FSession::add_renderable(utils::Entity                            e,
-                              std::shared_ptr<FMeshContent> const&     mesh,
-                              std::shared_ptr<FMaterialContent> const& mat) {
+void FSession::add_renderable(utils::Entity                 e,
+                              RefCounted<FMeshContent>*     mesh_ptr,
+                              RefCounted<FMaterialContent>* mat_ptr) {
     filament::RenderableManager::Builder b(1);
 
-    b.boundingBox(mesh->box())
-        .material(0, *mat)
+    auto& mat  = mat_ptr->item;
+    auto& mesh = mesh_ptr->item;
+
+    b.boundingBox(mesh.box())
+        .material(0, mat)
         .geometry(0,
                   filament::RenderableManager::PrimitiveType::TRIANGLES,
-                  mesh->verts().vertex_buffer(),
-                  mesh->index().index_buffer(),
+                  mesh.verts().vertex_buffer(),
+                  mesh.index().index_buffer(),
                   0,
-                  mesh->index().index_count())
+                  mesh.index().index_count())
         .castShadows(true);
 
-    if (mat->instance_count() > 0) { b.instances(mat->instance_count()); }
+    if (mat.instance_count() > 0) { b.instances(mat.instance_count()); }
 
     m_bound_render_resources[utils::Entity::smuggle(e)] = {
-        .material = mat,
-        .mesh     = mesh,
+        .material = mat_ptr->borrow(),
+        .mesh     = mesh_ptr->borrow(),
     };
 
     b.build(*engine(), e);
@@ -268,20 +275,16 @@ bool FSession::run_frame() {
         auto const& screen_info = *m_offaxis_screen_info;
 
         float near = 0.1f;
-        float far  = 1000.0f;
+        float far  = 1024.0f;
 
-        float new_head_x = std::sin(m_debug_head) * 2.0f - 1.0f;
-        m_debug_head += 0.01f;
-
-        filament::math::double3 head_pos = { new_head_x, 1.5f, 5.0f };
-        filament::math::quat    head_rot = { 1.0f, 0.0f, 0.0f, 0.0f };
-
-        proj::compute_off_axis_projection(
-            screen_info, head_pos, head_rot, true, near, far, camera());
+        proj::compute_off_axis_projection(screen_info,
+                                          m_head_pos,
+                                          filament::math::quat(m_head_rot),
+                                          true,
+                                          near,
+                                          far,
+                                          camera());
     }
-
-    // exit(0);
-
 
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());

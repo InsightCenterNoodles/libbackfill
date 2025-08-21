@@ -12,6 +12,16 @@
 
 extern "C" {
 
+static_assert(sizeof(short4) == 4 * sizeof(short));
+static_assert(sizeof(ushort2) == 2 * sizeof(unsigned short));
+static_assert(sizeof(ushort3) == 3 * sizeof(unsigned short));
+static_assert(sizeof(uint3) == 3 * sizeof(unsigned int));
+static_assert(sizeof(float2) == 2 * sizeof(float));
+static_assert(sizeof(float3) == 3 * sizeof(float));
+static_assert(sizeof(float4) == 4 * sizeof(float));
+static_assert(sizeof(mat4) == 16 * sizeof(float));
+static_assert(sizeof(aabb) == 2 * sizeof(float3));
+
 // =============================================================================
 
 void mat4_identity(mat4* mat) {
@@ -21,20 +31,24 @@ void mat4_identity(mat4* mat) {
     rmat.c     = { 0, 0, 1, 0 };
     rmat.d     = { 0, 0, 0, 1 };
 }
-void mat4_transform(mat4* ret, float3 pos) {
+void mat4_translate(mat4* ret, float3 pos) {
     auto& new_mat = *(filament::math::mat4f*)ret;
 
     new_mat = new_mat * filament::math::mat4f::translation(
                             filament::math::float3 { pos.x, pos.y, pos.z });
 }
 
+void mat4_from_array(mat4* out, const float m[16]) {
+    memcpy(out, m, 16 * sizeof(float));
+}
+
 // =============================================================================
 
-void pack_vertex(FVertexPNU const* source,
-                 uint32_t          vertex_count,
-                 ushort3 const*    index,
-                 uint32_t          index_count,
-                 FPackedVertex*    dest) {
+void pack_vertex_u16(FVertexPNU const* source,
+                     uint32_t          vertex_count,
+                     ushort3 const*    index,
+                     uint32_t          index_count,
+                     FPackedVertex*    dest) {
 
     static_assert(sizeof(FVertexPNU) == sizeof(Vertex));
     static_assert(sizeof(FPackedVertex) == sizeof(PackedVertex));
@@ -51,17 +65,24 @@ void pack_vertex(FVertexPNU const* source,
 // =============================================================================
 
 FBlob* fblob_init_copy(char const* data, u64 byte_count) {
-    return new FBlob(FBlob::from_copy({ data, byte_count }));
+    auto ptr =
+        make_refcounted_unsafe<Bytes>(Bytes::from_copy({ data, byte_count }));
+
+    return from_rc(ptr);
 }
-void fblob_destroy(FBlob* ptr) {
-    delete ptr;
+void fblob_release(FBlob* ptr) {
+    as_rc(ptr)->release();
 }
 
+FBlobRef fblobref_whole(FBlob* ptr) {
+    return FBlobRef {
+        .id     = ptr,
+        .start  = 0,
+        .length = SIZE_MAX,
+    };
+}
 
 // =============================================================================
-struct FMesh {
-    std::shared_ptr<FMeshContent> ptr;
-};
 
 FMesh* fmesh_init(FSession*      session,
                   FBlobRef       vertex_reference,
@@ -71,56 +92,45 @@ FMesh* fmesh_init(FSession*      session,
                   FMeshIndexType type,
                   aabb           bounding_box) {
 
-    auto content = std::make_shared<FMeshContent>(session,
-                                                  vertex_reference,
-                                                  vertex_count,
-                                                  index_reference,
-                                                  index_count,
-                                                  type,
-                                                  bounding_box);
+    auto ptr = make_refcounted_unsafe<FMeshContent>(session,
+                                                    vertex_reference,
+                                                    vertex_count,
+                                                    index_reference,
+                                                    index_count,
+                                                    type,
+                                                    bounding_box);
 
-    auto* ptr = new FMesh;
-
-    ptr->ptr = content;
-
-    return ptr;
+    return from_rc(ptr);
 }
 
-void fmesh_destroy(FMesh* ptr) {
-    delete ptr;
+void fmesh_release(FMesh* ptr) {
+    as_rc(ptr)->release();
 }
 
 // =============================================================================
 
-struct FMaterial {
-    std::shared_ptr<FMaterialContent> ptr;
-};
 
-FMaterial* fmaterial_init(FSession* session, FMaterialConfig flags) {
+FMaterial* fmaterial_init(FSession* session, FMaterialConfig* flags) {
 
-    auto content = std::make_shared<FMaterialContent>(
+    auto ptr = make_refcounted_unsafe<FMaterialContent>(
         session->engine(),
         session->new_instance_for_type(MaterialType::Lit),
-        (bool)flags.instanced);
+        flags->instance_count);
 
-    auto* ptr = new FMaterial;
-
-    ptr->ptr = content;
-
-    return ptr;
+    return from_rc(ptr);
 }
-void fmaterial_destroy(FMaterial* material) {
-    delete material;
+void fmaterial_release(FMaterial* ptr) {
+    as_rc(ptr)->release();
 }
 
 void fmaterial_set_base_color(FMaterial* ptr, FColor c) {
-    ptr->ptr->set_color(c);
+    as_rc(ptr)->item.set_color(c);
 }
 void fmaterial_set_roughness_metallic(FMaterial* ptr, float r, float m) {
-    ptr->ptr->set_rm(r, m);
+    as_rc(ptr)->item.set_rm(r, m);
 }
 void fmaterial_set_instances(FMaterial* ptr, mat4* data, u64 count) {
-    ptr->ptr->set_instances(data, count);
+    as_rc(ptr)->item.set_instances(data, count);
 }
 
 // =============================================================================
@@ -163,7 +173,7 @@ void flc_set_direction(FLightConfig* ptr, float3 d) {
 void flc_set_spot_cone(FLightConfig* ptr, float inner, float outer) {
     ptr->spotLightCone(inner, outer);
 }
-void flc_set_shadows(FLightConfig* ptr, bool shadows) {
+void flc_set_shadows(FLightConfig* ptr, uint8_t shadows) {
     ptr->castShadows(shadows);
 }
 
@@ -190,7 +200,7 @@ void fconfig_set_screen(FConfig* ptr, int w, int h) {
     ptr->w = w;
     ptr->h = h;
 }
-void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane* plane) {
+void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane const* plane) {
     ScreenDesc desc {
         .lower_left = {
             plane->lower_left[0],
@@ -223,7 +233,7 @@ void fs_destroy(FSession* ptr) {
     delete ptr;
 }
 
-void fs_set_postprocess(FSession* ptr, bool opt) {
+void fs_set_postprocess(FSession* ptr, uint8_t opt) {
     ptr->view()->setPostProcessingEnabled(opt);
 }
 
@@ -236,7 +246,11 @@ void fs_set_skybox_color(FSession* ptr, FColor color) {
     ptr->set_skybox(sb);
 }
 
-bool fs_frame(FSession* ptr) {
+void fs_update_head(FSession* ptr, float3 pos, float4 quat) {
+    ptr->update_head(pos, quat);
+}
+
+uint8_t fs_frame(FSession* ptr) {
     return ptr->run_frame();
 }
 
@@ -253,7 +267,7 @@ void fs_destroy_entity(FSession* ptr, i32 id) {
 void fs_add_renderable(FSession* ptr, i32 entity, FMesh* mesh, FMaterial* mat) {
     auto e = utils::Entity::import(entity);
 
-    ptr->add_renderable(e, mesh->ptr, mat->ptr);
+    ptr->add_renderable(e, as_rc(mesh), as_rc(mat));
 }
 
 void fs_del_renderable(FSession* ptr, i32 entity) {
@@ -262,7 +276,7 @@ void fs_del_renderable(FSession* ptr, i32 entity) {
     ptr->del_renderable(e);
 }
 
-void fs_add_transform(FSession* ptr, i32 entity, mat4 const* data) {
+void fs_set_transform(FSession* ptr, i32 entity, mat4 const* data) {
     auto e = utils::Entity::import(entity);
 
     ptr->add_transform(e, data);
