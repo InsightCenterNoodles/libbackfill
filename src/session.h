@@ -6,6 +6,7 @@
 
 #include <filament/Box.h>
 #include <filament/Skybox.h>
+#include <filament/Texture.h>
 
 
 std::shared_ptr<filament::Skybox> make_skybox(filament::Skybox::Builder builder,
@@ -58,7 +59,7 @@ C_BRIDGE(FMesh, RefCounted<FMeshContent>);
 // =============================================================================
 
 
-struct FMaterialContent {
+class FMaterialContent {
     filament::Engine*           m_engine         = nullptr;
     filament::MaterialInstance* m_instance       = nullptr;
     unsigned                    m_instance_count = 0;
@@ -85,6 +86,93 @@ C_BRIDGE(FMaterial, RefCounted<FMaterialContent>);
 
 // =============================================================================
 
+namespace image {
+class LinearImage;
+}
+
+struct ImageDescription {
+    size_t width;
+    size_t height;
+    size_t n_channels;
+    size_t size;
+};
+
+class FImageContent {
+
+    std::unique_ptr<image::LinearImage> m_pending;
+
+    ImageDescription m_description;
+
+    // filament::Texture::PixelBufferDescriptor m_buffer;
+
+    // static void completion(void* buffer, size_t size, void* user);
+
+public:
+    DISABLE_MOVE_COPY(FImageContent);
+
+    FImageContent(FBlobRef);
+    ~FImageContent();
+
+    auto const& description() const { return m_description; }
+
+    image::LinearImage const& image() const { return *m_pending; }
+};
+
+C_BRIDGE(FImage, RefCounted<FImageContent>);
+
+// =============================================================================
+
+struct FTextureConfig {
+
+    Owned<FImageContent> image;
+
+    filament::Texture::Builder builder;
+
+    FTextureConfig(RefCounted<FImageContent>*);
+};
+
+class FTextureContent {
+    Owned<FImageContent> m_image;
+
+    filament::Engine*  m_engine;
+    filament::Texture* m_texture;
+
+    static void completion(void* buffer, size_t size, void* user);
+
+public:
+    DISABLE_MOVE_COPY(FTextureContent);
+    FTextureContent(FSession*, FTextureConfig&);
+    ~FTextureContent();
+
+    filament::Texture* texture() { return m_texture; }
+};
+
+C_BRIDGE(FTexture, RefCounted<FTextureContent>);
+
+// =============================================================================
+
+class EnvLightContent {
+    Owned<FTextureContent>   m_texture;
+    filament::Engine*        m_engine;
+    filament::Texture*       m_skybox_texture;
+    filament::Texture*       m_specular;
+    filament::Texture*       m_fog_texture;
+    filament::IndirectLight* m_indirect_light;
+    filament::Skybox*        m_skybox;
+
+public:
+    DISABLE_MOVE_COPY(EnvLightContent);
+
+    EnvLightContent(FSession*, RefCounted<FTextureContent>*);
+    ~EnvLightContent();
+
+    filament::IndirectLight* indirect_light() { return m_indirect_light; }
+    filament::Skybox*        skybox() { return m_skybox; }
+};
+
+C_BRIDGE(FEnvironmentLight, RefCounted<EnvLightContent>);
+
+// =============================================================================
 
 struct UsedMatMesh {
     Owned<FMaterialContent> material;
@@ -93,6 +181,7 @@ struct UsedMatMesh {
 
 class FSession : public RenderState {
     SkyboxPtr m_skybox;
+    Owned<EnvLightContent> m_env_light;
 
     std::optional<ScreenDesc> m_offaxis_screen_info;
 
@@ -107,6 +196,7 @@ public:
     FSession(FConfig const& config);
 
     void set_skybox(SkyboxPtr);
+    void set_env_light(RefCounted<EnvLightContent>*);
 
     void update_head(float3 pos, float4 quat);
 

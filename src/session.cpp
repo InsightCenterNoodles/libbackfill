@@ -1,19 +1,27 @@
 #include "session.h"
 
+#include <filament-iblprefilter/IBLPrefilterContext.h>
 #include <filament/Camera.h>
 #include <filament/Engine.h>
 #include <filament/IndexBuffer.h>
+#include <filament/IndirectLight.h>
 #include <filament/LightManager.h>
 #include <filament/Material.h>
+#include <filament/MaterialInstance.h>
 #include <filament/RenderableManager.h>
 #include <filament/Renderer.h>
 #include <filament/Scene.h>
 #include <filament/Skybox.h>
 #include <filament/SwapChain.h>
+#include <filament/Texture.h>
 #include <filament/TransformManager.h>
 #include <filament/VertexBuffer.h>
 #include <filament/View.h>
 #include <filament/Viewport.h>
+#include <image/LinearImage.h>
+#include <imageio/ImageDecoder.h>
+#include <math/mat4.h>
+#include <utils/EntityManager.h>
 
 #include <backend/BufferDescriptor.h>
 
@@ -136,6 +144,151 @@ void FMaterialContent::set_instances(mat4* data, size_t count) {
 
 // =============================================================================
 
+struct membuf : std::basic_streambuf<char> {
+    membuf(const char* data, std::size_t size) {
+        // Do NOT allow writes; keep it read-only.
+        auto* p = const_cast<char*>(data); // safe as long as we never write
+        setg(p, p, p + size);              // [eback, gptr, egptr]
+    }
+
+protected:
+    pos_type seekoff(off_type                off,
+                     std::ios_base::seekdir  dir,
+                     std::ios_base::openmode which) override {
+        if (!(which & std::ios_base::in)) return pos_type(off_type(-1));
+
+        char* base = eback();
+        char* curr = gptr();
+        char* end  = egptr();
+
+        char* target = nullptr;
+        switch (dir) {
+        case std::ios_base::beg: target = base + off; break;
+        case std::ios_base::cur: target = curr + off; break;
+        case std::ios_base::end: target = end + off; break;
+        default: return pos_type(off_type(-1));
+        }
+        if (target < base || target > end) return pos_type(off_type(-1));
+        setg(base, target, end);
+        return pos_type(target - base);
+    }
+
+    pos_type seekpos(pos_type sp, std::ios_base::openmode which) override {
+        return seekoff(off_type(sp), std::ios_base::beg, which);
+    }
+};
+
+
+FImageContent::FImageContent(FBlobRef ref) {
+    auto b = ref_to_bytes(ref);
+
+    auto sbuf = membuf(b.data(), b.size());
+
+    auto stream = std::istream(&sbuf);
+
+    auto lin_image = image::ImageDecoder::decode(stream, "In memory stream");
+
+    if (!lin_image.isValid()) { throw std::invalid_argument("Invalid image"); }
+
+    auto w = lin_image.getWidth();
+    auto h = lin_image.getHeight();
+    auto n = lin_image.getChannels();
+
+    m_description = {
+        .width      = w,
+        .height     = h,
+        .n_channels = n,
+        .size       = w * h * n * sizeof(float),
+    };
+
+    // documentation says image data under the hood is refcounted??
+    m_pending = std::make_unique<image::LinearImage>(lin_image);
+}
+
+FImageContent::~FImageContent() = default;
+
+// =============================================================================
+
+FTextureConfig::FTextureConfig(RefCounted<FImageContent>* ptr)
+    : image(ptr->borrow()) {
+    auto const& desc = image->description();
+    builder.width(desc.width)
+        .height(desc.height)
+        .levels(0xff)
+        .sampler(filament::Texture::Sampler::SAMPLER_2D)
+        .usage(filament::Texture::Usage::DEFAULT);
+}
+
+
+void FTextureContent::completion(void* buffer, size_t, void* user) {
+    ((FTextureContent*)user)->m_image = {};
+}
+
+FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
+    : m_image(config.image), m_engine(session->engine()) {
+    m_texture = config.builder.build(*m_engine);
+
+    auto const& desc = m_image->description();
+
+    // Transfer to GPU. The PBD only references the data, thus it must stay
+    // alive, while uploading. There is an internal gpu buffer id it holds.
+    auto buffer =
+        filament::Texture::PixelBufferDescriptor(m_image->image().getPixelRef(),
+                                                 desc.size,
+                                                 filament::Texture::Format::RGB,
+                                                 filament::Texture::Type::FLOAT,
+                                                 completion,
+                                                 this);
+
+    m_texture->setImage(*m_engine, 0, std::move(buffer));
+}
+
+FTextureContent::~FTextureContent() {
+    m_engine->destroy(m_texture);
+}
+
+// =============================================================================
+
+EnvLightContent::EnvLightContent(FSession*                    ptr,
+                                 RefCounted<FTextureContent>* texture)
+    : m_texture(texture->borrow()), m_engine(ptr->engine()) {
+
+    IBLPrefilterContext context(*m_engine);
+
+    IBLPrefilterContext::EquirectangularToCubemap equirectangularToCubemap(
+        context);
+    IBLPrefilterContext::SpecularFilter   specularFilter(context);
+    IBLPrefilterContext::IrradianceFilter irradianceFilter(context);
+
+    m_skybox_texture = equirectangularToCubemap(m_texture->texture());
+    m_specular       = specularFilter(m_skybox_texture);
+    m_fog_texture    = irradianceFilter(
+        {
+               .generateMipmap = true,
+        },
+        m_skybox_texture);
+    m_fog_texture->generateMipmaps(*m_engine);
+
+    m_indirect_light = filament::IndirectLight::Builder()
+                           .reflections(m_skybox_texture)
+                           .intensity(30000.0f)
+                           .build(*m_engine);
+
+    m_skybox = filament::Skybox::Builder()
+                   .environment(m_skybox_texture)
+                   .showSun(true)
+                   .build(*m_engine);
+}
+
+EnvLightContent::~EnvLightContent() {
+    m_engine->destroy(m_fog_texture);
+    m_engine->destroy(m_specular);
+    m_engine->destroy(m_skybox_texture);
+}
+
+
+// =============================================================================
+
 FSession::FSession(FConfig const& config) : RenderState(config) {
     m_materials.push_back(
         filament::Material::Builder()
@@ -155,8 +308,16 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
 }
 
 void FSession::set_skybox(SkyboxPtr ptr) {
-    m_skybox = ptr;
+    // order of operations here... replace the skybox first so its always a
+    // valid ref
     scene()->setSkybox(ptr.get());
+    // now replace the handle, deleting the old one if it exists
+    m_skybox = ptr;
+}
+
+void FSession::set_env_light(RefCounted<EnvLightContent>* env_light) {
+    scene()->setIndirectLight(env_light->item.indirect_light());
+    m_env_light = env_light->borrow();
 }
 
 void FSession::update_head(float3 pos, float4 quat) {

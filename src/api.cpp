@@ -6,7 +6,10 @@
 
 #include <filament/LightManager.h>
 #include <filament/MaterialInstance.h>
+#include <filament/Texture.h>
 #include <filament/View.h>
+#include <image/LinearImage.h>
+#include <imageio/ImageDecoder.h>
 #include <math/mat4.h>
 #include <utils/EntityManager.h>
 
@@ -80,6 +83,64 @@ FBlobRef fblobref_whole(FBlob* ptr) {
         .start  = 0,
         .length = SIZE_MAX,
     };
+}
+
+// =============================================================================
+
+
+FImage* fimg_init_exr(FBlobRef ref) {
+    auto ptr = make_refcounted_unsafe<FImageContent>(ref);
+
+    return from_rc(ptr);
+}
+void fimg_release(FImage* ptr) {
+    as_rc(ptr)->release();
+}
+
+// =============================================================================
+
+FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
+    if (!ptr) return nullptr;
+
+    auto p = new FTextureConfig(as_rc(ptr));
+
+    auto fmt = filament::Texture::InternalFormat::RGB8;
+
+    switch (format) {
+    case R11F_G11F_B10F:
+        fmt = filament::Texture::InternalFormat::R11F_G11F_B10F;
+        break;
+    }
+
+    p->builder.format(fmt);
+
+    return p;
+}
+
+void ftex_config_destroy(FTextureConfig* ptr) {
+    delete ptr;
+}
+
+FTexture* ftex_init(FSession* ptr, FTextureConfig* cfg) {
+    auto p = make_refcounted_unsafe<FTextureContent>(ptr, *cfg);
+
+    return from_rc(p);
+}
+
+void ftex_release(FTexture* ptr) {
+    as_rc(ptr)->release();
+}
+
+// =============================================================================
+
+FEnvironmentLight* fenv_light_init_equirect(FSession* ptr, FTexture* tex) {
+    auto p = make_refcounted_unsafe<EnvLightContent>(ptr, as_rc(tex));
+
+    return from_rc(p);
+}
+
+void fenv_light_release(FEnvironmentLight* ptr) {
+    as_rc(ptr)->release();
 }
 
 // =============================================================================
@@ -244,6 +305,10 @@ void fs_set_skybox_color(FSession* ptr, FColor color) {
     auto sb = make_skybox(builder, ptr->engine());
 
     ptr->set_skybox(sb);
+}
+
+void fs_set_environment_light(FSession* ptr, FEnvironmentLight* light) {
+    ptr->set_env_light(as_rc(light));
 }
 
 void fs_update_head(FSession* ptr, float3 pos, float4 quat) {

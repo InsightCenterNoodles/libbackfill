@@ -222,6 +222,8 @@ private:
     ~RefCounted() = default;
 
 public:
+    DISABLE_MOVE_COPY(RefCounted);
+
     template <class... Args>
     explicit RefCounted(Args&&... args) noexcept
         : item(std::forward<Args>(args)...) {
@@ -299,12 +301,17 @@ template <class T>
 
 template <class T, class... Args>
 [[nodiscard]] Owned<T> make_refcounted(Args&&... args) {
-    return Owned<T>::adopt(new RefCounted<T>(std::forward<Args>(args)...));
+    try {
+        auto p = new RefCounted<T>(std::forward<Args>(args)...);
+        return Owned<T>::adopt(p);
+    } catch (std::exception const&) { return Owned<T>(); }
 }
 
 template <class T, class... Args>
-[[nodiscard]] auto* make_refcounted_unsafe(Args&&... args) {
-    return new RefCounted<T>(std::forward<Args>(args)...);
+[[nodiscard]] RefCounted<T>* make_refcounted_unsafe(Args&&... args) {
+    try {
+        return new RefCounted<T>(std::forward<Args>(args)...);
+    } catch (std::exception const&) { return nullptr; }
 }
 
 #define C_BRIDGE(CTYPE, CPPTYPE)                                               \

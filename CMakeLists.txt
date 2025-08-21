@@ -100,6 +100,10 @@ target_link_libraries(backfill
         utils
         geometry
         backend
+        image
+        imageio
+        ibl
+        filament-iblprefilter
         SDL3-static
         spdlog::spdlog
 )
@@ -135,6 +139,10 @@ set(_MERGE_INPUT_TARGETS
     utils
     geometry
     backend
+    image
+    imageio
+    ibl
+    filament-iblprefilter
     spdlog
     SDL3-static
     vkshaders

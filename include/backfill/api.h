@@ -110,6 +110,8 @@ void pack_vertex_u32(FVertexPNU const* source,
 /// All types with a release_ use reference counting. You MUST release after an
 /// init. Init will create a pointer to an object with an RC of 1.
 
+// =============================================================================
+
 FBlob* fblob_init_copy(char const* data, u64 byte_count);
 void   fblob_release(FBlob*);
 
@@ -123,16 +125,33 @@ FBlobRef fblobref_whole(FBlob*);
 
 // =============================================================================
 
-enum ImageType { EXR };
+struct FImage;
 
+FImage* fimg_init_exr(FBlobRef);
+void    fimg_release(FImage*);
+
+// =============================================================================
+
+struct FTexture;
 struct FTextureConfig;
 
-FTextureConfig* ftex_config_init();
+enum TextureFormat {
+    R11F_G11F_B10F,
+};
+
+FTextureConfig* ftex_config_init(FImage*, TextureFormat);
 void            ftex_config_destroy(FTextureConfig*);
 
-void ftex_config_set_image_source(FTextureConfig*, FBlobRef, ImageType);
-void ftex_config_image_dimensions(FTextureConfig*, int w, int h);
+FTexture* ftex_init(FSession*, FTextureConfig*);
+void      ftex_release(FTexture*);
 
+
+// =============================================================================
+
+struct FEnvironmentLight;
+
+FEnvironmentLight* fenv_light_init_equirect(FSession*, FTexture*);
+void               fenv_light_release(FEnvironmentLight*);
 
 // =============================================================================
 
@@ -216,6 +235,7 @@ void      fs_destroy(FSession*);
 void fs_set_postprocess(FSession*, uint8_t);
 
 void fs_set_skybox_color(FSession*, FColor);
+void fs_set_environment_light(FSession*, FEnvironmentLight*);
 
 void fs_update_head(FSession*, float3 pos, float4 quat);
 

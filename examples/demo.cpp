@@ -1,5 +1,12 @@
 
+#include <filesystem>
 #include <span>
+
+#include <fcntl.h>    // For open()
+#include <sys/mman.h> // For mmap(), munmap()
+#include <sys/stat.h> // For fstat()
+#include <unistd.h>   // For close()
+
 #include <spdlog/spdlog.h>
 
 #include <backfill/api.h>
@@ -316,7 +323,13 @@ void setup_lights(FSession* session) {
     }
 }
 
-int main() {
+int main(int argc, char** argv) {
+
+    std::vector<std::string> arguments;
+    for (int i = 1; i < argc; i++) {
+        arguments.emplace_back(argv[i]);
+    }
+
     // We intentionally don't clean anything up..
     spdlog::set_level(spdlog::level::debug);
 
@@ -384,6 +397,58 @@ int main() {
     }
 
     setup_lights(session);
+
+    if (!arguments.empty()) {
+
+        auto maybe_image = arguments.back();
+
+
+        if (std::filesystem::exists(maybe_image)) {
+
+
+            int fd = open(maybe_image.c_str(), O_RDWR);
+            if (fd == -1) {
+                spdlog::error("Unable to read envmap");
+                return EXIT_FAILURE;
+            }
+
+            struct stat sb;
+            if (fstat(fd, &sb) == -1) {
+                spdlog::error("Unable to read envmap");
+                return EXIT_FAILURE;
+            }
+
+            size_t file_size = sb.st_size;
+
+            void* mapped_data = mmap(
+                NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+            if (mapped_data == MAP_FAILED) {
+                spdlog::error("Unable to load envmap");
+                return EXIT_FAILURE;
+            }
+
+            char* data_ptr = static_cast<char*>(mapped_data);
+
+            auto* img_blob = fblob_init_copy(data_ptr, file_size);
+
+            munmap(mapped_data, file_size);
+            close(fd);
+
+            auto ref = fblobref_whole(img_blob);
+
+            auto* image = fimg_init_exr(ref);
+
+            auto* texture_cfg = ftex_config_init(image, R11F_G11F_B10F);
+
+            auto* texture = ftex_init(session, texture_cfg);
+
+            ftex_config_destroy(texture_cfg);
+
+            auto* ibl = fenv_light_init_equirect(session, texture);
+
+            fs_set_environment_light(session, ibl);
+        }
+    }
 
     float debug_head = 0;
 
