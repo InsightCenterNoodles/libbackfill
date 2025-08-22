@@ -77,7 +77,7 @@ public:
 
     void set_rm(float r, float m);
 
-    void set_instances(mat4* data, size_t count);
+    void set_instances(mat4 const* data, size_t count);
 
     operator filament::MaterialInstance*() const { return m_instance; }
 };

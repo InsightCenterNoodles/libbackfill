@@ -3,12 +3,13 @@ cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
-  NAME SDL
-  URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.18.tar.gz
-  OPTIONS
-    "BUILD_SHARED_LIBS OFF"
-    "SDL_SHARED OFF"
-    "SDL_STATIC ON"
+    NAME SDL
+    URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.18.tar.gz
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+        "SDL_SHARED OFF"
+        "SDL_STATIC ON"
+    EXCLUDE_FROM_ALL YES
 )
 
 # Relax Filament's deprecated warnings-as-errors on macOS 15 Metal
@@ -16,22 +17,24 @@ set(_no_error_depr "-Wno-error=deprecated-declarations")
 
 
 CPMAddPackage(
-  NAME filament
-  URL https://github.com/google/filament/archive/refs/tags/v1.62.1.tar.gz
-  OPTIONS
-    "BUILD_SHARED_LIBS OFF"
-    "FILAMENT_SKIP_SAMPLES ON"
-    "CMAKE_COMPILE_WARNING_AS_ERROR OFF"
-    "CMAKE_C_FLAGS ${_no_error_depr}"
-    "CMAKE_CXX_FLAGS ${_no_error_depr}"
-    "CMAKE_OBJCXX_FLAGS ${_no_error_depr}" # important for Metal (.mm) files
+    NAME filament
+    URL https://github.com/google/filament/archive/refs/tags/v1.62.1.tar.gz
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+        "FILAMENT_SKIP_SAMPLES ON"
+        "CMAKE_COMPILE_WARNING_AS_ERROR OFF"
+        "CMAKE_C_FLAGS ${_no_error_depr}"
+        "CMAKE_CXX_FLAGS ${_no_error_depr}"
+        "CMAKE_OBJCXX_FLAGS ${_no_error_depr}" # important for Metal (.mm) files
+    EXCLUDE_FROM_ALL YES
 )
 
 CPMAddPackage(
-  NAME spdlog
-  URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz
-  OPTIONS
-    "BUILD_SHARED_LIBS OFF"
+    NAME spdlog
+    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+    EXCLUDE_FROM_ALL YES
 )
 
 if (UNIX AND NOT APPLE)
@@ -257,7 +260,13 @@ install(FILES ${_FAT_OUTPUT}
 
 # Install public headers
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        FILES_MATCHING
+            PATTERN "*.h"
+            PATTERN "*.hpp"
+            PATTERN "*.hh"
+          PATTERN ".*" EXCLUDE        # exclude all dotfiles (e.g. .DS_Store)
+    )
 
 # Configure pkg-config file
 set(prefix ${CMAKE_INSTALL_PREFIX})

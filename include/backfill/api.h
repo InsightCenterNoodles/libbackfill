@@ -1,58 +1,64 @@
 #pragma once
 
-#include <cstdint>
+#ifdef __cplusplus
+#    include <cstdint>
+#else
+#    include <stdint.h>
+#endif
 
 /// This API is SINGLE THREADED
 
+#ifdef __cplusplus
 extern "C" {
+#endif
 
-using i32 = int32_t;
-using u64 = uint64_t;
+typedef int32_t  i32;
+typedef uint64_t u64;
 
-struct FScreenPlane {
+typedef struct FScreenPlane {
     double lower_left[3];
     double lower_right[3];
     double upper_right[3];
-};
+} FScreenPlane;
 
-struct short4 {
+typedef struct short4 {
     int16_t x, y, z, w;
-};
+} short4;
 
-struct ushort2 {
+typedef struct ushort2 {
     uint16_t x, y;
-};
+} ushort2;
 
-struct ushort3 {
+typedef struct ushort3 {
     uint16_t x, y, z;
-};
+} ushort3;
 
-struct uint3 {
+typedef struct uint3 {
     uint32_t x, y, z;
-};
+} uint3;
 
 
-struct float2 {
+typedef struct float2 {
     float x, y;
-};
+} float2;
 
-struct float3 {
+typedef struct float3 {
     float x, y, z;
-};
+} float3;
 
-struct float4 {
+typedef struct float4 {
     float x, y, z, w;
-};
+} float4;
 
 /// Column major format
-struct mat4 {
+typedef struct mat4 {
     float4 a, b, c, d;
-};
+} mat4;
 
-struct aabb {
+typedef struct aabb {
     float3 minimum;
     float3 maximum;
-};
+} aabb;
 
 // These functions are for debugging. It is assumed that another library will be
 // making matrices for you.
@@ -69,27 +75,27 @@ void mat4_from_array(mat4* out, const float m[16]);
 // =============================================================================
 
 /// Unpacked vertex information
-struct FVertexPNU {
+typedef struct FVertexPNU {
     float3 position;
     float3 normal;
     float2 uv;
-};
+} FVertexPNU;
 
-struct FPackedVertex {
+typedef struct FPackedVertex {
     float3  position;
     short4  surface;
     ushort2 texture;
-};
+} FPackedVertex;
 
-struct FColor {
+typedef struct FColor {
     float r, g, b, a;
-};
+} FColor;
 
-struct FConfig;
-struct FSession;
-struct FBlob;
-struct FMesh;
-struct FMaterial;
+typedef struct FConfig   FConfig;
+typedef struct FSession  FSession;
+typedef struct FBlob     FBlob;
+typedef struct FMesh     FMesh;
+typedef struct FMaterial FMaterial;
 
 // =============================================================================
 
@@ -115,29 +121,29 @@ void pack_vertex_u32(FVertexPNU const* source,
 FBlob* fblob_init_copy(char const* data, u64 byte_count);
 void   fblob_release(FBlob*);
 
-struct FBlobRef {
+typedef struct FBlobRef {
     FBlob* id;
     u64    start;
     u64    length;
-};
+} FBlobRef;
 
 FBlobRef fblobref_whole(FBlob*);
 
 // =============================================================================
 
-struct FImage;
+typedef struct FImage FImage;
 
 FImage* fimg_init_exr(FBlobRef);
 void    fimg_release(FImage*);
 
 // =============================================================================
 
-struct FTexture;
-struct FTextureConfig;
+typedef struct FTexture       FTexture;
+typedef struct FTextureConfig FTextureConfig;
 
-enum TextureFormat {
+typedef enum TextureFormat {
     R11F_G11F_B10F,
-};
+} TextureFormat;
 
 FTextureConfig* ftex_config_init(FImage*, TextureFormat);
 void            ftex_config_destroy(FTextureConfig*);
@@ -148,14 +154,14 @@ void      ftex_release(FTexture*);
 
 // =============================================================================
 
-struct FEnvironmentLight;
+typedef struct FEnvironmentLight FEnvironmentLight;
 
 FEnvironmentLight* fenv_light_init_equirect(FSession*, FTexture*);
 void               fenv_light_release(FEnvironmentLight*);
 
 // =============================================================================
 
-enum FMeshIndexType { U16, U32 };
+typedef enum FMeshIndexType { U16, U32 } FMeshIndexType;
 
 FMesh* fmesh_init(FSession*,
                   FBlobRef vertex_reference,
@@ -177,14 +183,14 @@ void fmesh_release(FMesh*);
 // qx, qy, qz, uvy
 // sx, sy, sz, uvs
 
-enum MatConfigFlags {
+typedef enum MatConfigFlags {
     MC_UNLIT = (1 << 0),
-};
+} MatConfigFlags;
 
-struct FMaterialConfig {
+typedef struct FMaterialConfig {
     uint32_t mask;
     uint32_t instance_count;
-};
+} FMaterialConfig;
 
 
 FMaterial* fmaterial_init(FSession*, FMaterialConfig*);
@@ -195,13 +201,13 @@ void fmaterial_set_roughness_metallic(FMaterial*, float r, float m);
 
 /// We use one matrix per instance. The data is copied into a UBO, which means a
 /// limit of 1024 instances per material instance.
-void fmaterial_set_instances(FMaterial*, mat4* data, u64 count);
+void fmaterial_set_instances(FMaterial*, mat4 const* data, u64 count);
 
 // =============================================================================
 
-struct FLightConfig;
+typedef struct FLightConfig FLightConfig;
 
-enum FLightType { POINT, SPOT, DIRECTIONAL, SUN };
+typedef enum FLightType { POINT, SPOT, DIRECTIONAL, SUN } FLightType;
 
 FLightConfig* flightconfig_init(FLightType);
 void          flightconfig_destroy(FLightConfig*);
@@ -266,4 +272,7 @@ void fs_add_light(FSession*, i32, FLightConfig*);
 void fs_del_light(FSession*, i32);
 
 // =============================================================================
+
+#ifdef __cplusplus
 }
+#endif

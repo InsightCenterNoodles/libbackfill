@@ -190,7 +190,7 @@ void fmaterial_set_base_color(FMaterial* ptr, FColor c) {
 void fmaterial_set_roughness_metallic(FMaterial* ptr, float r, float m) {
     as_rc(ptr)->item.set_rm(r, m);
 }
-void fmaterial_set_instances(FMaterial* ptr, mat4* data, u64 count) {
+void fmaterial_set_instances(FMaterial* ptr, mat4 const* data, u64 count) {
     as_rc(ptr)->item.set_instances(data, count);
 }
 

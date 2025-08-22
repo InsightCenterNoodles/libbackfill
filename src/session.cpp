@@ -133,7 +133,7 @@ void FMaterialContent::set_rm(float r, float m) {
     m_instance->setParameter("metallic", m);
 }
 
-void FMaterialContent::set_instances(mat4* data, size_t count) {
+void FMaterialContent::set_instances(mat4 const* data, size_t count) {
     static_assert(sizeof(mat4) == sizeof(filament::math::mat4f));
     if (count > 1024) {
         spdlog::warn("Setting instance counts above 1024 could cause "
