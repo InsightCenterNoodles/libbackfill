@@ -73,6 +73,9 @@ FBlob* fblob_init_copy(char const* data, u64 byte_count) {
 
     return from_rc(ptr);
 }
+void fblob_acquire(FBlob* ptr) {
+    as_rc(ptr)->retain();
+}
 void fblob_release(FBlob* ptr) {
     as_rc(ptr)->release();
 }
@@ -92,6 +95,9 @@ FImage* fimg_init_exr(FBlobRef ref) {
     auto ptr = make_refcounted_unsafe<FImageContent>(ref);
 
     return from_rc(ptr);
+}
+void fimg_acquire(FImage* ptr) {
+    as_rc(ptr)->retain();
 }
 void fimg_release(FImage* ptr) {
     as_rc(ptr)->release();
@@ -126,7 +132,9 @@ FTexture* ftex_init(FSession* ptr, FTextureConfig* cfg) {
 
     return from_rc(p);
 }
-
+void ftex_acquire(FTexture* ptr) {
+    as_rc(ptr)->retain();
+}
 void ftex_release(FTexture* ptr) {
     as_rc(ptr)->release();
 }
@@ -163,7 +171,9 @@ FMesh* fmesh_init(FSession*      session,
 
     return from_rc(ptr);
 }
-
+void fmesh_acquire(FMesh* ptr) {
+    as_rc(ptr)->retain();
+}
 void fmesh_release(FMesh* ptr) {
     as_rc(ptr)->release();
 }
@@ -179,6 +189,9 @@ FMaterial* fmaterial_init(FSession* session, FMaterialConfig* flags) {
         flags->instance_count);
 
     return from_rc(ptr);
+}
+void fmaterial_acquire(FMaterial* ptr) {
+    as_rc(ptr)->retain();
 }
 void fmaterial_release(FMaterial* ptr) {
     as_rc(ptr)->release();

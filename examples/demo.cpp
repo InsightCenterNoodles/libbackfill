@@ -281,8 +281,7 @@ void setup_lights(FSession* session) {
           20.0f,
           25.0f },
 
-        // -Z (blue): place in front, point toward -Z (origin if your scene
-        // is around (0,0,0))
+        // -Z (blue): place in front, point toward -Z
         { { 0.0f, 0.0f, 10.0f },
           { 0, 0, -1 },
           { 0, 0, 1 },

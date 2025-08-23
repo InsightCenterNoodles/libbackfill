@@ -119,6 +119,7 @@ void pack_vertex_u32(FVertexPNU const* source,
 // =============================================================================
 
 FBlob* fblob_init_copy(char const* data, u64 byte_count);
+void   fblob_acquire(FBlob*);
 void   fblob_release(FBlob*);
 
 typedef struct FBlobRef {
@@ -134,6 +135,7 @@ FBlobRef fblobref_whole(FBlob*);
 typedef struct FImage FImage;
 
 FImage* fimg_init_exr(FBlobRef);
+void    fimg_acquire(FImage*);
 void    fimg_release(FImage*);
 
 // =============================================================================
@@ -149,6 +151,7 @@ FTextureConfig* ftex_config_init(FImage*, TextureFormat);
 void            ftex_config_destroy(FTextureConfig*);
 
 FTexture* ftex_init(FSession*, FTextureConfig*);
+void      ftex_acquire(FTexture*);
 void      ftex_release(FTexture*);
 
 
@@ -157,6 +160,7 @@ void      ftex_release(FTexture*);
 typedef struct FEnvironmentLight FEnvironmentLight;
 
 FEnvironmentLight* fenv_light_init_equirect(FSession*, FTexture*);
+void               fenv_light_acquire(FEnvironmentLight*);
 void               fenv_light_release(FEnvironmentLight*);
 
 // =============================================================================
@@ -171,6 +175,7 @@ FMesh* fmesh_init(FSession*,
                   FMeshIndexType,
                   aabb bounding_box);
 
+void fmesh_acquire(FMesh*);
 void fmesh_release(FMesh*);
 
 // =============================================================================
@@ -194,6 +199,7 @@ typedef struct FMaterialConfig {
 
 
 FMaterial* fmaterial_init(FSession*, FMaterialConfig*);
+void       fmaterial_acquire(FMaterial*);
 void       fmaterial_release(FMaterial*);
 
 void fmaterial_set_base_color(FMaterial*, FColor);

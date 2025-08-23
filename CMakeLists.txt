@@ -67,7 +67,7 @@ set(BACKFILL_SOURCES
     src/api.cpp
 )
 
-add_library(backfill STATIC ${BACKFILL_SOURCES})
+add_library(backfill SHARED ${BACKFILL_SOURCES})
 
 set_target_properties(backfill PROPERTIES CXX_STANDARD 20)
 
@@ -95,6 +95,18 @@ target_sources(backfill
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/backfill/api.h>
 )
+
+if(APPLE)
+    # Make the install_name be @rpath/libbackfill_full.dylib so dependents can find it via their rpaths.
+    set_target_properties(backfill PROPERTIES
+        MACOSX_RPATH     ON
+        INSTALL_NAME_DIR "@rpath"
+    )
+elseif(LINUX)
+    # Executables depending on this can find it relative to themselves when installed.
+    # (Consumers can still override/extend their own RPATHs.)
+    set_target_properties(backfill PROPERTIES INSTALL_RPATH "\$ORIGIN")
+endif()
 
 # Link third-party deps to the library
 target_link_libraries(backfill
@@ -132,81 +144,10 @@ if(APPLE)
     )
 endif()
 
-# ------------------------------
-# Build the "fat" static archive by merging all the .a/.lib
-# ------------------------------
-
-set(_MERGE_INPUT_TARGETS
-    backfill
-    filament
-    utils
-    geometry
-    backend
-    image
-    imageio
-    ibl
-    filament-iblprefilter
-    spdlog
-    SDL3-static
-    vkshaders
-    bluevk
-)
-set(_BACKFILL_STATIC_INPUTS)
-foreach(tgt IN LISTS _MERGE_INPUT_TARGETS)
-  if(TARGET ${tgt})
-    list(APPEND _BACKFILL_STATIC_INPUTS $<TARGET_FILE:${tgt}>)
-  endif()
-endforeach()
-
-if(NOT _BACKFILL_STATIC_INPUTS)
-  message(FATAL_ERROR "No static inputs found to build fat archive.")
+if(WIN32)
+    # Export all symbols automatically for a quick DLL (replace with explicit exports later).
+    set_target_properties(backfill PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
-
-set(_FAT_OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/libbackfill_full${CMAKE_STATIC_LIBRARY_SUFFIX})
-
-if(APPLE)
-  # libtool is the reliable way to merge archives on macOS
-  add_custom_command(
-    OUTPUT ${_FAT_OUTPUT}
-    COMMAND libtool -static -o ${_FAT_OUTPUT} ${_BACKFILL_STATIC_INPUTS}
-    DEPENDS ${_BACKFILL_STATIC_INPUTS}
-    VERBATIM
-  )
-elseif(WIN32)
-  # MSVC librarian merges .lib files
-  add_custom_command(
-    OUTPUT ${_FAT_OUTPUT}
-    COMMAND lib /OUT:${_FAT_OUTPUT} ${_BACKFILL_STATIC_INPUTS}
-    DEPENDS ${_BACKFILL_STATIC_INPUTS}
-    VERBATIM
-  )
-else()
-  # Generic Unix (Linux, etc.): use ar MRI script, then ranlib
-  set(_MRI ${CMAKE_CURRENT_BINARY_DIR}/merge_backfill.mri)
-  add_custom_command(
-    OUTPUT ${_FAT_OUTPUT}
-    COMMAND ${CMAKE_COMMAND} -E rm -f ${_FAT_OUTPUT}
-    COMMAND ${CMAKE_COMMAND} -E echo "CREATE ${_FAT_OUTPUT}" > ${_MRI}
-    # Add each input archive
-    COMMAND ${CMAKE_COMMAND} -DINPUTS="$<JOIN:${_BACKFILL_STATIC_INPUTS},;>" -DMRI=${_MRI} -P ${CMAKE_CURRENT_LIST_DIR}/cmake/write_addlib_list.cmake
-    COMMAND ${CMAKE_COMMAND} -E echo "SAVE" >> ${_MRI}
-    COMMAND ${CMAKE_COMMAND} -E echo "END"  >> ${_MRI}
-    COMMAND ${CMAKE_AR} -M < ${_MRI}
-    COMMAND ${CMAKE_RANLIB} ${_FAT_OUTPUT}
-    DEPENDS ${_BACKFILL_STATIC_INPUTS}
-    VERBATIM
-  )
-  # The small helper script that writes ADDLIB lines (see below)
-  file(WRITE ${CMAKE_CURRENT_LIST_DIR}/cmake/write_addlib_list.cmake
-"string(REPLACE \";\" \"\\n\" _lines \"${INPUTS}\")\n
-foreach(L IN LISTS _lines)\n
-  if(NOT L STREQUAL \"\")\n
-    file(APPEND ${MRI} \"ADDLIB ${L}\\n\")\n
-  endif()\n
-endforeach()\n")
-endif()
-
-add_custom_target(backfill_full ALL DEPENDS ${_FAT_OUTPUT})
 
 # For dev quality of life ======================================================
 
@@ -254,9 +195,6 @@ target_link_libraries(backfill_demo PRIVATE backfill spdlog::spdlog)
 
 include(GNUInstallDirs)
 
-# Install the merged static archive
-install(FILES ${_FAT_OUTPUT}
-        DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Install public headers
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
@@ -267,6 +205,14 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
             PATTERN "*.hh"
           PATTERN ".*" EXCLUDE        # exclude all dotfiles (e.g. .DS_Store)
     )
+
+# Install the shared library target itself
+install(TARGETS backfill
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}   # .dll/.exe helpers (Windows)
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}   # .so/.dylib
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}   # import libs / static fallback
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
 
 # Configure pkg-config file
 set(prefix ${CMAKE_INSTALL_PREFIX})
