@@ -235,6 +235,7 @@ void fconfig_set_title(FConfig*, char const*);
 void fconfig_set_display(FConfig*, char const*);
 void fconfig_set_device(FConfig*, int);
 void fconfig_set_screen(FConfig*, int w, int h);
+void fconfig_set_log_debug(FConfig*, uint8_t);
 
 /// Enable off-axis mode using this screen plane.
 void fconfig_set_offaxis_plane(FConfig*, FScreenPlane const*);
@@ -271,6 +272,9 @@ void fs_set_transform(FSession*, i32, mat4 const*);
 /// Sets the parent, and CLEARS/overwrites the childs current transform if there
 /// is one.
 void fs_set_parent(FSession*, i32 child, i32 parent);
+
+/// Extract current camera matrix info
+void fs_debug_camera(FSession*, mat4* out_model, mat4* out_proj);
 
 /// Add a light component to an entity. You may destroy or reuse the
 /// configuration after this call.

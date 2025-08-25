@@ -182,7 +182,6 @@ void fmesh_release(FMesh* ptr) {
 
 
 FMaterial* fmaterial_init(FSession* session, FMaterialConfig* flags) {
-
     auto ptr = make_refcounted_unsafe<FMaterialContent>(
         session->engine(),
         session->new_instance_for_type(MaterialType::Lit),
@@ -274,6 +273,9 @@ void fconfig_set_screen(FConfig* ptr, int w, int h) {
     ptr->w = w;
     ptr->h = h;
 }
+void fconfig_set_log_debug(FConfig* ptr, uint8_t b) {
+    ptr->log_debug = b;
+}
 void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane const* plane) {
     ScreenDesc desc {
         .lower_left = {
@@ -363,6 +365,10 @@ void fs_set_transform(FSession* ptr, i32 entity, mat4 const* data) {
 void fs_set_parent(FSession* ptr, i32 child, i32 parent) {
     ptr->set_parent(utils::Entity::import(child),
                     utils::Entity::import(parent));
+}
+
+void fs_debug_camera(FSession* ptr, mat4* out_model, mat4* out_proj) {
+    ptr->debug_camera(out_model, out_proj);
 }
 
 void fs_add_light(FSession* ptr, i32 entity, FLightConfig* config) {

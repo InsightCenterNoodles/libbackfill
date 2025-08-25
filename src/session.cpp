@@ -108,6 +108,12 @@ FMeshContent::FMeshContent(FSession*      session,
 
     m_box.set(translate_float3(bounding_box.minimum),
               translate_float3(bounding_box.maximum));
+
+    spdlog::debug("Creating mesh assets {}", (void*)this);
+}
+
+FMeshContent::~FMeshContent() {
+    spdlog::debug("Destroying mesh assets {}", (void*)this);
 }
 
 // =============================================================================
@@ -115,11 +121,12 @@ FMeshContent::FMeshContent(FSession*      session,
 FMaterialContent::FMaterialContent(filament::Engine*           engine,
                                    filament::MaterialInstance* instance,
                                    unsigned                    use_instances)
-    : m_engine(engine),
-      m_instance(instance),
-      m_instance_count(use_instances) { }
+    : m_engine(engine), m_instance(instance), m_instance_count(use_instances) {
+    spdlog::debug("new material: {}", (void*)m_instance);
+}
 
 FMaterialContent::~FMaterialContent() {
+    spdlog::debug("Destroying material: {}", (void*)m_instance);
     m_engine->destroy(m_instance);
 }
 
@@ -290,6 +297,10 @@ EnvLightContent::~EnvLightContent() {
 // =============================================================================
 
 FSession::FSession(FConfig const& config) : RenderState(config) {
+
+    spdlog::set_level(config.log_debug ? spdlog::level::debug
+                                       : spdlog::level::info);
+
     m_materials.push_back(
         filament::Material::Builder()
             .package(generated::get_primarylit_matbin().data(),
@@ -339,6 +350,7 @@ utils::Entity FSession::new_entity() {
     return e;
 }
 void FSession::delete_entity(utils::Entity e) {
+    spdlog::debug("Delete entity {}", e.getId());
     manager().destroy(e);
     m_bound_render_resources.erase(utils::Entity::smuggle(e));
 }
@@ -346,6 +358,10 @@ void FSession::delete_entity(utils::Entity e) {
 void FSession::add_renderable(utils::Entity                 e,
                               RefCounted<FMeshContent>*     mesh_ptr,
                               RefCounted<FMaterialContent>* mat_ptr) {
+    spdlog::debug("Add renderable {} mesh {} mat {}",
+                  e.getId(),
+                  (void*)mesh_ptr,
+                  (void*)mat_ptr);
     filament::RenderableManager::Builder b(1);
 
     auto& mat  = mat_ptr->item;
@@ -372,6 +388,7 @@ void FSession::add_renderable(utils::Entity                 e,
 }
 
 void FSession::del_renderable(utils::Entity e) {
+    spdlog::debug("Remove renderable {}", e.getId());
     filament::Engine* ptr = engine();
 
     auto& rm = ptr->getRenderableManager();
@@ -406,6 +423,16 @@ void FSession::set_parent(utils::Entity child, utils::Entity parent) {
     auto parent_instance = tm.getInstance(parent);
 
     tm.create(child, parent_instance);
+}
+
+void FSession::debug_camera(mat4* out_model, mat4* out_proj) {
+    auto* c = this->camera();
+
+    auto om = filament::math::mat4f(c->getModelMatrix());
+    auto op = filament::math::mat4f(c->getProjectionMatrix());
+
+    *(filament::math::mat4f*)out_model = om;
+    *(filament::math::mat4f*)out_proj  = op;
 }
 
 static_assert(UTILS_HAS_THREADING);

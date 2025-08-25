@@ -48,6 +48,8 @@ public:
                  FMeshIndexType type,
                  aabb           bounding_box);
 
+    ~FMeshContent();
+
     filament::Engine*        engine() const { return m_engine; }
     LocalVertexBuffer const& verts() const { return m_verts; }
     LocalIndexBuffer const&  index() const { return m_index; }
@@ -214,6 +216,8 @@ public:
     void add_transform(utils::Entity, mat4 const* tf);
 
     void set_parent(utils::Entity child, utils::Entity parent);
+
+    void debug_camera(mat4* out_model, mat4* out_proj);
 
     bool run_frame();
 };
