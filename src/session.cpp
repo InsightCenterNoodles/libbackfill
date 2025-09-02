@@ -21,6 +21,7 @@
 #include <image/LinearImage.h>
 #include <imageio/ImageDecoder.h>
 #include <math/mat4.h>
+#include <unistd.h>
 #include <utils/EntityManager.h>
 
 #include <backend/BufferDescriptor.h>
@@ -208,11 +209,21 @@ FImageContent::FImageContent(FBlobRef ref) {
         .size       = w * h * n * sizeof(float),
     };
 
+    spdlog::info("Found image {} {} {} {} bytes", w, h, n, m_description.size);
+
     // documentation says image data under the hood is refcounted??
     m_pending = std::make_unique<image::LinearImage>(lin_image);
+
+    auto* ptr = m_pending->getPixelRef();
+
+    spdlog::debug("Data {} {} {} {}", ptr[0], ptr[1], ptr[2], ptr[3]);
+
+    spdlog::debug("Creating image {} from blob {}", (void*)this, (void*)ref.id);
 }
 
-FImageContent::~FImageContent() = default;
+FImageContent::~FImageContent() {
+    spdlog::debug("Destroying image {}", (void*)this);
+}
 
 // =============================================================================
 
@@ -248,10 +259,14 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
                                                  this);
 
     m_texture->setImage(*m_engine, 0, std::move(buffer));
+
+    spdlog::debug("Creating texture {}", (void*)this);
 }
 
 FTextureContent::~FTextureContent() {
     m_engine->destroy(m_texture);
+
+    spdlog::debug("Destroying texture {}", (void*)this);
 }
 
 // =============================================================================
@@ -281,16 +296,25 @@ EnvLightContent::EnvLightContent(FSession*                    ptr,
                            .intensity(30000.0f)
                            .build(*m_engine);
 
+    expect(m_indirect_light, "Unable to build indirect light");
+
     m_skybox = filament::Skybox::Builder()
                    .environment(m_skybox_texture)
                    .showSun(true)
                    .build(*m_engine);
+
+    spdlog::debug("Creating envlight {}", (void*)this);
 }
 
 EnvLightContent::~EnvLightContent() {
+    m_engine->destroy(m_skybox);
+    m_engine->destroy(m_indirect_light);
+
     m_engine->destroy(m_fog_texture);
     m_engine->destroy(m_specular);
     m_engine->destroy(m_skybox_texture);
+
+    spdlog::debug("Destroying envlight {}", (void*)this);
 }
 
 
@@ -318,6 +342,13 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
     spdlog::info("Created new session");
 }
 
+FSession::~FSession() {
+    for (auto* m : m_materials) {
+        filament::Engine* engine = this->engine();
+        engine->destroy(m);
+    }
+}
+
 void FSession::set_skybox(SkyboxPtr ptr) {
     // order of operations here... replace the skybox first so its always a
     // valid ref
@@ -337,6 +368,7 @@ void FSession::update_head(float3 pos, float4 quat) {
 }
 
 filament::MaterialInstance* FSession::new_instance_for_type(MaterialType type) {
+    spdlog::debug("Creating new instance for material type {}", (int)type);
     return m_materials.at((size_t)type)->createInstance();
 }
 

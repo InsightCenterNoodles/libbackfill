@@ -345,6 +345,7 @@ int main(int argc, char** argv) {
     fconfig_set_title(ptr, "Test Window");
     fconfig_set_screen(ptr, 1920, 1200);
     fconfig_set_offaxis_plane(ptr, &plane);
+    fconfig_set_log_debug(ptr, 1);
 
     auto* session = fs_init(ptr);
 
@@ -395,7 +396,7 @@ int main(int argc, char** argv) {
         fs_set_transform(session, entity, &transform);
     }
 
-    setup_lights(session);
+    // setup_lights(session);
 
     if (!arguments.empty()) {
 
@@ -437,6 +438,8 @@ int main(int argc, char** argv) {
 
             auto* image = fimg_init_exr(ref);
 
+            fblob_release(img_blob);
+
             auto* texture_cfg = ftex_config_init(image, R11F_G11F_B10F);
 
             auto* texture = ftex_init(session, texture_cfg);
@@ -445,7 +448,14 @@ int main(int argc, char** argv) {
 
             auto* ibl = fenv_light_init_equirect(session, texture);
 
+            ftex_release(texture);
+            fimg_release(image);
+
             fs_set_environment_light(session, ibl);
+
+            fenv_light_release(ibl);
+
+            spdlog::info("Setting env light");
         }
     }
 

@@ -154,8 +154,10 @@ C_BRIDGE(FTexture, RefCounted<FTextureContent>);
 // =============================================================================
 
 class EnvLightContent {
-    Owned<FTextureContent>   m_texture;
-    filament::Engine*        m_engine;
+    Owned<FTextureContent> m_texture;
+    filament::Engine*      m_engine;
+
+    // owned:
     filament::Texture*       m_skybox_texture;
     filament::Texture*       m_specular;
     filament::Texture*       m_fog_texture;
@@ -190,12 +192,14 @@ class FSession : public RenderState {
     filament::math::float3 m_head_pos;
     filament::math::quatf  m_head_rot;
 
+    // NEED TO KEEP THIS IN SYNC WITH THE API
     std::vector<filament::Material*> m_materials;
 
     std::unordered_map<i32, UsedMatMesh> m_bound_render_resources;
 
 public:
     FSession(FConfig const& config);
+    ~FSession();
 
     void set_skybox(SkyboxPtr);
     void set_env_light(RefCounted<EnvLightContent>*);

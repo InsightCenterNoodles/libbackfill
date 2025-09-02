@@ -116,7 +116,10 @@ FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
     case R11F_G11F_B10F:
         fmt = filament::Texture::InternalFormat::R11F_G11F_B10F;
         break;
+    default: spdlog::warn("Unknown texture format {}!", (int)format);
     }
+
+    spdlog::debug("ftex set format {}", (int)fmt);
 
     p->builder.format(fmt);
 
@@ -341,7 +344,7 @@ i32 fs_new_entity(FSession* ptr) {
 
 // This does destroy component content, but I feel skeptical...
 void fs_destroy_entity(FSession* ptr, i32 id) {
-    ptr->manager().destroy(utils::Entity::import(id));
+    ptr->delete_entity(utils::Entity::import(id));
 }
 
 void fs_add_renderable(FSession* ptr, i32 entity, FMesh* mesh, FMaterial* mat) {

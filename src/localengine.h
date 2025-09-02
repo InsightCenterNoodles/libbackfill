@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.h"
 #include "utility.h"
 
 
@@ -8,13 +9,15 @@ class Engine;
 }
 
 
+/// Our implementation of the Filament engine
 class LocalEngine {
-    filament::Engine* m_pointer;
+    filament::Engine*            m_pointer        = nullptr;
+    filament::backend::Platform* m_custom_backend = nullptr;
 
 public:
     DISABLE_MOVE_COPY(LocalEngine);
 
-    LocalEngine();
+    LocalEngine(FConfig const& config);
 
     ~LocalEngine();
 
