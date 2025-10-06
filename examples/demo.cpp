@@ -215,7 +215,7 @@ float dot(float3 a, float3 b) {
 }
 
 float3 normalize(float3 v) {
-    float norm = dot(v, v);
+    float norm = std::sqrt(dot(v, v));
 
     return { v.x / norm, v.y / norm, v.z / norm };
 }

@@ -45,6 +45,7 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     if (config.display.size()) { setenv("DISPLAY", config.display.c_str(), 1); }
 
+    // SDL 3 uses true for success here
     expect(SDL_Init(SDL_INIT_EVENTS | SDL_INIT_VIDEO),
            "Unable to initialize SDL");
 
@@ -54,13 +55,6 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
         config.title.c_str(), config.w, config.h, window_flags);
 
     m_native_window = obtain_native_window(m_window_pointer);
-
-    if (!SDL_GL_SetSwapInterval(-1)) { SDL_GL_SetSwapInterval(1); }
-
-    int actual_interval = 0;
-    SDL_GL_GetSwapInterval(&actual_interval);
-
-    spdlog::info("Set GL swap interval: {}", actual_interval);
 }
 
 LocalPlatform::~LocalPlatform() {

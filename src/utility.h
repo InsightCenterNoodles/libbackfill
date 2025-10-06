@@ -131,7 +131,7 @@ public:
 
     template <class T>
     ReinterpArray<T> as_typed(size_t start = 0,
-                              size_t len   = SIZE_T_MAX) const noexcept;
+                              size_t len   = SIZE_MAX) const noexcept;
 
     explicit operator bool() const noexcept { return m_start_ptr; }
 };

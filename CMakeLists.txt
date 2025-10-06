@@ -74,7 +74,8 @@ set_target_properties(backfill PROPERTIES CXX_STANDARD 20)
 # Disable warnings for use of the embedded directive
 target_compile_options(backfill PRIVATE -Wno-c23-extensions)
 
-# Force for all platforms. Linux tries to build with libstdc++.
+# Force for all platforms. Hard requirement for Filament.
+# Linux tries to build with libstdc++.
 target_compile_options(backfill PRIVATE -stdlib=libc++)
 target_link_options(backfill PRIVATE -stdlib=libc++)
 

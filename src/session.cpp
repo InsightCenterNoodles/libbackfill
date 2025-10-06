@@ -232,7 +232,7 @@ FTextureConfig::FTextureConfig(RefCounted<FImageContent>* ptr)
     auto const& desc = image->description();
     builder.width(desc.width)
         .height(desc.height)
-        .levels(0xff)
+        .levels(0xff) // will be automatically clamped
         .sampler(filament::Texture::Sampler::SAMPLER_2D)
         .usage(filament::Texture::Usage::DEFAULT);
 }
@@ -383,8 +383,9 @@ utils::Entity FSession::new_entity() {
 }
 void FSession::delete_entity(utils::Entity e) {
     spdlog::debug("Delete entity {}", e.getId());
+    del_renderable(e);
     manager().destroy(e);
-    m_bound_render_resources.erase(utils::Entity::smuggle(e));
+    // m_bound_render_resources.erase(utils::Entity::smuggle(e));
 }
 
 void FSession::add_renderable(utils::Entity                 e,

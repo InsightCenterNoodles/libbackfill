@@ -13,6 +13,8 @@
 #include <math/mat4.h>
 #include <utils/EntityManager.h>
 
+#include <cstring>
+
 extern "C" {
 
 static_assert(sizeof(short4) == 4 * sizeof(short));
@@ -84,7 +86,7 @@ FBlobRef fblobref_whole(FBlob* ptr) {
     return FBlobRef {
         .id     = ptr,
         .start  = 0,
-        .length = SIZE_MAX,
+        .length = UINT64_MAX.,
     };
 }
 
@@ -148,6 +150,10 @@ FEnvironmentLight* fenv_light_init_equirect(FSession* ptr, FTexture* tex) {
     auto p = make_refcounted_unsafe<EnvLightContent>(ptr, as_rc(tex));
 
     return from_rc(p);
+}
+
+void fenv_light_acquire(FEnvironmentLight* p) {
+    as_rc(p)->retain();
 }
 
 void fenv_light_release(FEnvironmentLight* ptr) {

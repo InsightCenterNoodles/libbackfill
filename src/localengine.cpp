@@ -3,7 +3,7 @@
 #include <backend/platforms/VulkanPlatform.h>
 
 
-#ifdef __APPLE__ß
+#ifdef __APPLE__
 constexpr bool is_apple = true;
 #else
 constexpr bool is_apple = false;
