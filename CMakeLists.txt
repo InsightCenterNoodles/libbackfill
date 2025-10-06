@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
+set(CMAKE_C_COMPILER   clang  CACHE STRING "" FORCE)
+set(CMAKE_CXX_COMPILER clang++ CACHE STRING "" FORCE)
+
+
 include(cmake/CPM.cmake)
 
 CPMAddPackage(
@@ -11,6 +15,9 @@ CPMAddPackage(
         "SDL_STATIC ON"
     EXCLUDE_FROM_ALL YES
 )
+
+set_property(TARGET SDL3-static PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 
 # Relax Filament's deprecated warnings-as-errors on macOS 15 Metal
 set(_no_error_depr "-Wno-error=deprecated-declarations")
@@ -38,7 +45,6 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
 )
 
-set_property(TARGET SDL3-static PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 if (UNIX AND NOT APPLE)
     set(LINUX TRUE)
@@ -82,6 +88,9 @@ target_compile_options(backfill PRIVATE -Wno-c23-extensions)
 target_compile_options(backfill PRIVATE -stdlib=libc++)
 target_link_options(backfill PRIVATE -stdlib=libc++)
 
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
+
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
     target_compile_options(backfill PUBLIC -mavx)
 endif ()
@@ -124,7 +133,7 @@ target_link_libraries(backfill
         ibl
         filament-iblprefilter
         SDL3-static
-        spdlog::spdlog
+        spdlog::spdlog_header_only
 )
 
 # Platform bits the lib needs (propagated to consumers)
@@ -177,6 +186,7 @@ set_target_properties(backfill_demo PROPERTIES CXX_STANDARD 20)
 target_compile_options(backfill_demo PRIVATE -stdlib=libc++)
 target_link_options(backfill_demo PRIVATE -stdlib=libc++)
 
+
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(X86)|(amd64)|(AMD64)")
     target_compile_options(backfill_demo PUBLIC -mavx)
 endif ()
@@ -193,7 +203,7 @@ target_include_directories(backfill_demo PRIVATE
 )
 
 # Link the app against your library (which drags in Filament/SDL/etc).
-target_link_libraries(backfill_demo PRIVATE backfill spdlog::spdlog)
+target_link_libraries(backfill_demo PRIVATE backfill spdlog::spdlog_header_only)
 
 # Install ======================================================================
 
