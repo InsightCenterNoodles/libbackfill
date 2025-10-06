@@ -34,6 +34,7 @@ CPMAddPackage(
     URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz
     OPTIONS
         "BUILD_SHARED_LIBS OFF"
+        "SPDLOG_BUILD_PIC ON"
     EXCLUDE_FROM_ALL YES
 )
 
