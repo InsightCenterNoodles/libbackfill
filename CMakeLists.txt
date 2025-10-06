@@ -38,6 +38,8 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
 )
 
+set_property(TARGET SDL3-static PROPERTY POSITION_INDEPENDENT_CODE ON)
+
 if (UNIX AND NOT APPLE)
     set(LINUX TRUE)
 endif()
