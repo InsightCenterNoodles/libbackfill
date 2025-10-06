@@ -86,7 +86,7 @@ FBlobRef fblobref_whole(FBlob* ptr) {
     return FBlobRef {
         .id     = ptr,
         .start  = 0,
-        .length = UINT64_MAX.,
+        .length = UINT64_MAX,
     };
 }
 
