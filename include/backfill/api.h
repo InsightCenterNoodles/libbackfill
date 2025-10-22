@@ -236,6 +236,7 @@ void fconfig_set_display(FConfig*, char const*);
 void fconfig_set_device(FConfig*, int index);
 void fconfig_set_screen(FConfig*, int w, int h);
 void fconfig_set_log_debug(FConfig*, uint8_t);
+void fconfig_set_fullscreen(FConfig*, uint8_t);
 
 /// Enable off-axis mode using this screen plane.
 void fconfig_set_offaxis_plane(FConfig*, FScreenPlane const*);
