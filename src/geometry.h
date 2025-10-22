@@ -27,6 +27,10 @@ void vert_compress(std::span<const Vertex>                  src,
                    std::span<const filament::math::ushort3> index,
                    std::span<PackedVertex>                  out);
 
+void vert_compress(std::span<const Vertex>                src,
+                   std::span<const filament::math::uint3> index,
+                   std::span<PackedVertex>                out);
+
 /// A vertex buffer, with async upload
 class LocalVertexBuffer {
     Bytes                             m_pending_upload;

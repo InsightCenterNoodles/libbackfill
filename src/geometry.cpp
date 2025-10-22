@@ -46,11 +46,10 @@ void PackedVertex::setup(filament::VertexBuffer::Builder& vb) {
         .normalized(filament::VertexAttribute::UV0);
 }
 
-void vert_compress(std::span<const Vertex>  src,
-                   std::span<const ushort3> index,
-                   std::span<PackedVertex>  out) {
-    using namespace filament::math;
-
+template <class T>
+void vert_compress_common(std::span<const Vertex> src,
+                          std::span<const T>      index,
+                          std::span<PackedVertex> out) {
     auto vertex_count = src.size();
 
     expect(out.size() == src.size(), "Mismatched source and dest");
@@ -94,6 +93,18 @@ void vert_compress(std::span<const Vertex>  src,
             float4 { quats[i].x, quats[i].y, quats[i].z, quats[i].w };
         out[i].surface = packSnorm16(q);
     }
+}
+
+void vert_compress(std::span<const Vertex>  src,
+                   std::span<const ushort3> index,
+                   std::span<PackedVertex>  out) {
+    vert_compress_common(src, index, out);
+}
+
+void vert_compress(std::span<const Vertex>                src,
+                   std::span<const filament::math::uint3> index,
+                   std::span<PackedVertex>                out) {
+    vert_compress_common(src, index, out);
 }
 
 

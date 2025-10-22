@@ -67,6 +67,24 @@ void pack_vertex_u16(FVertexPNU const* source,
                   std::span { new_dest, vertex_count });
 }
 
+void pack_vertex_u32(FVertexPNU const* source,
+                     uint32_t          vertex_count,
+                     uint3 const*      index,
+                     uint32_t          index_count,
+                     FPackedVertex*    dest) {
+
+    static_assert(sizeof(FVertexPNU) == sizeof(Vertex));
+    static_assert(sizeof(FPackedVertex) == sizeof(PackedVertex));
+
+    auto new_source = (Vertex const*)source;
+    auto new_index  = (filament::math::uint3 const*)index;
+    auto new_dest   = (PackedVertex*)dest;
+
+    vert_compress(std::span { new_source, vertex_count },
+                  std::span { new_index, index_count },
+                  std::span { new_dest, vertex_count });
+}
+
 // =============================================================================
 
 FBlob* fblob_init_copy(char const* data, u64 byte_count) {
