@@ -20,6 +20,8 @@ struct FConfig {
     int w = 1024;
     int h = 768;
 
+    bool full_screen = false;
+
     bool log_debug = false;
 
     std::optional<ScreenDesc> screen_info;
