@@ -321,10 +321,6 @@ EnvLightContent::~EnvLightContent() {
 // =============================================================================
 
 FSession::FSession(FConfig const& config) : RenderState(config) {
-
-    spdlog::set_level(config.log_debug ? spdlog::level::debug
-                                       : spdlog::level::info);
-
     m_materials.push_back(
         filament::Material::Builder()
             .package(generated::get_primarylit_matbin().data(),
@@ -512,6 +508,8 @@ bool FSession::run_frame() {
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());
         renderer->endFrame();
+    } else {
+        spdlog::debug("{} Skipping frame!", getpid());
     }
 
     return true;

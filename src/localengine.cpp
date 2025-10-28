@@ -19,6 +19,8 @@ public:
 
         pref.index = std::clamp(device_index, -1, 255);
 
+        spdlog::debug("Using device at index {}", pref.index);
+
         m_customization = { .gpu = pref };
     }
 

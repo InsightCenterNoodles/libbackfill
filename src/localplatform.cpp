@@ -2,6 +2,7 @@
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_video.h>
+#include <SDL3/SDL_hints.h>
 
 #ifdef __APPLE__
 #    define NS_PRIVATE_IMPLEMENTATION
@@ -42,8 +43,15 @@ void* obtain_native_window(SDL_Window* window) {
 
 
 LocalPlatform::LocalPlatform(FConfig const& config) {
+    spdlog::set_level(config.log_debug ? spdlog::level::debug
+                                       : spdlog::level::info);
 
-    if (config.display.size()) { setenv("DISPLAY", config.display.c_str(), 1); }
+    SDL_SetHint(SDL_HINT_VIDEO_X11_XRANDR, "0");
+
+    if (config.display.size()) { 
+        spdlog::debug("Creating display at {}", config.display);
+        setenv("DISPLAY", config.display.c_str(), 1); 
+    }
 
     // SDL 3 uses true for success here
     expect(SDL_Init(SDL_INIT_EVENTS | SDL_INIT_VIDEO),
