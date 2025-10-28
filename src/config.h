@@ -22,6 +22,8 @@ struct FConfig {
 
     bool full_screen = false;
 
+    bool left_eye = false;
+
     bool log_debug = false;
 
     std::optional<ScreenDesc> screen_info;

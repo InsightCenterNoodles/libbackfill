@@ -191,6 +191,7 @@ class FSession : public RenderState {
 
     filament::math::float3 m_head_pos;
     filament::math::quatf  m_head_rot;
+    bool                   m_is_left = false;
 
     // NEED TO KEEP THIS IN SYNC WITH THE API
     std::vector<filament::Material*> m_materials;

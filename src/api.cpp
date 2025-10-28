@@ -328,6 +328,10 @@ void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane const* plane) {
     ptr->screen_info = desc;
 }
 
+void fconfig_set_stereo_eye(FConfig* ptr, FEye eye) {
+    ptr->left_eye = eye == EYE_LEFT;
+}
+
 // =============================================================================
 
 FSession* fs_init(FConfig* ptr) {

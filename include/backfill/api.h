@@ -241,6 +241,13 @@ void fconfig_set_fullscreen(FConfig*, uint8_t);
 /// Enable off-axis mode using this screen plane.
 void fconfig_set_offaxis_plane(FConfig*, FScreenPlane const*);
 
+
+/// Eye selection for stereo rendering
+typedef enum FEye { EYE_LEFT, EYE_RIGHT } FEye;
+
+/// Set off-axis eye
+void fconfig_set_stereo_eye(FConfig*, FEye);
+
 // =============================================================================
 
 FSession* fs_init(FConfig*);

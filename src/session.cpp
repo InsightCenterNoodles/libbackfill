@@ -338,15 +338,17 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
             .build(*engine()));
 
     m_offaxis_screen_info = config.screen_info;
+    m_is_left             = config.left_eye;
 
     spdlog::info("Created new session");
 }
 
 FSession::~FSession() {
-    for (auto* m : m_materials) {
-        filament::Engine* engine = this->engine();
-        engine->destroy(m);
-    }
+    spdlog::debug("Closing session...");
+    // for (auto* m : m_materials) {
+    //        filament::Engine* engine = this->engine();
+    //      engine->destroy(m);
+    //}
 }
 
 void FSession::set_skybox(SkyboxPtr ptr) {
@@ -501,7 +503,7 @@ bool FSession::run_frame() {
         proj::compute_off_axis_projection(screen_info,
                                           m_head_pos,
                                           filament::math::quat(m_head_rot),
-                                          true,
+                                          m_is_left,
                                           near,
                                           far,
                                           camera());
