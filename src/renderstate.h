@@ -30,7 +30,7 @@ public:
 
     LocalPlatform const&  platform() { return m_platform; };
     LocalEngine const&    engine() { return m_engine; };
-    LocalRenderer const&  renderer() { return m_renderer; };
+    LocalRenderer&        renderer() { return m_renderer; };
     utils::EntityManager& manager() { return m_manager; };
     filament::Scene*      scene() { return m_scene; }
     filament::View*       view() { return m_view; }

@@ -2,12 +2,13 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 # Config
 input_dir = Path("assets/materials")
 output_dir = Path("assets/generated")
-converter_exe = Path("third_party/bin/matc")
+converter_exe = Path(sys.argv[-1])
 cpp_output_file = Path("src/generated.cpp")
 header_output_file = Path("src/generated.h")
 

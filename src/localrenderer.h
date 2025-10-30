@@ -24,6 +24,8 @@ public:
 
     ~LocalRenderer();
 
+    void rebuild_swapchain(LocalPlatform const& lp);
+
     filament::SwapChain* swap_chain() const { return m_swap_chain; }
     filament::Renderer*  renderer() const { return m_renderer; }
 };

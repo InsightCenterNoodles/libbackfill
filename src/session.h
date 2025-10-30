@@ -8,6 +8,8 @@
 #include <filament/Skybox.h>
 #include <filament/Texture.h>
 
+#include <SDL3/SDL_timer.h>
+
 
 std::shared_ptr<filament::Skybox> make_skybox(filament::Skybox::Builder builder,
                                               filament::Engine*);
@@ -192,6 +194,8 @@ class FSession : public RenderState {
     filament::math::float3 m_head_pos;
     filament::math::quatf  m_head_rot;
     bool                   m_is_left = false;
+
+    unsigned m_frame_skip_count = 0;
 
     // NEED TO KEEP THIS IN SYNC WITH THE API
     std::vector<filament::Material*> m_materials;

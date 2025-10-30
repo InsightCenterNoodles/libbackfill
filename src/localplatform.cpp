@@ -59,6 +59,10 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     uint32_t window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
+    #ifndef  __APPLE__
+        window_flags |= SDL_WINDOW_VULKAN;
+    #endif
+
     m_window_pointer = SDL_CreateWindow(
         config.title.c_str(), config.w, config.h, window_flags);
 

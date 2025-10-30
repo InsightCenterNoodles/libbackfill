@@ -470,11 +470,6 @@ static_assert(UTILS_HAS_THREADING);
 
 bool FSession::run_frame() {
 
-    auto* renderer   = this->renderer().renderer();
-    auto* swap_chain = this->renderer().swap_chain();
-
-    // do animation here
-
     // process events
 
     SDL_Event event;
@@ -484,6 +479,11 @@ bool FSession::run_frame() {
         case SDL_EVENT_QUIT: return false;
         case SDL_EVENT_KEY_DOWN:
             if (event.key.scancode == SDL_SCANCODE_ESCAPE) { return false; }
+            break;
+        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+        case SDL_EVENT_WINDOW_RESIZED:
+            spdlog::debug("{} Screen resize!", getpid());
+            this->renderer().rebuild_swapchain(this->platform());
             break;
         }
     }
@@ -505,11 +505,37 @@ bool FSession::run_frame() {
                                           camera());
     }
 
+    auto* renderer   = this->renderer().renderer();
+    auto* swap_chain = this->renderer().swap_chain();
+
+    static int delay = 17;
+
+    if (delay > 0) {
+        SDL_Delay(delay);
+    }
+
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());
         renderer->endFrame();
+        spdlog::debug("{} Draw frame! {} {}", getpid(), m_frame_skip_count, delay);
+        m_frame_skip_count = 0;
+        delay = std::clamp(delay - 1, 0, 100);
     } else {
-        spdlog::debug("{} Skipping frame!", getpid());
+        spdlog::debug("{} Skipping frame! {} {}", getpid(), m_frame_skip_count, delay);
+
+        // if (m_frame_skip_count ==0) {
+        //     spdlog::debug("Recover...");
+        //     this->renderer().rebuild_swapchain(this->platform());
+        // }
+
+        m_frame_skip_count++;
+        delay += 1;
+        
+        // forcing anyway gives a lockup
+
+        //renderer->render(view());
+        //renderer->endFrame();
+        
     }
 
     return true;

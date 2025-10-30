@@ -49,6 +49,12 @@ LocalEngine::LocalEngine(FConfig const& config) {
         builder.platform(m_custom_backend);
     }
 
+    filament::Engine::Config engine_config;
+
+    engine_config.jobSystemThreadCount = 8;
+
+    builder.config(&engine_config);
+
     m_pointer = builder.build();
     expect(!!m_pointer, "Unable to initialize engine");
 }
