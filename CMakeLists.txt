@@ -28,8 +28,9 @@ CPMAddPackage(
     URL https://github.com/google/filament/archive/refs/tags/v1.66.2.tar.gz
     OPTIONS
         "BUILD_SHARED_LIBS OFF"
-        "FILAMENT_SKIP_SAMPLES ON"
+        "FILAMENT_SKIP_SAMPLES OFF"
         "CMAKE_COMPILE_WARNING_AS_ERROR OFF"
+        "FILAMENT_SUPPORTS_XCB OFF"
         "CMAKE_C_FLAGS ${_no_error_depr}"
         "CMAKE_CXX_FLAGS ${_no_error_depr}"
         "CMAKE_OBJCXX_FLAGS ${_no_error_depr}" # important for Metal (.mm) files

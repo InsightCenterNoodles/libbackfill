@@ -336,6 +336,8 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
     m_offaxis_screen_info = config.screen_info;
     m_is_left             = config.left_eye;
 
+    m_last = std::chrono::high_resolution_clock::now();
+
     spdlog::info("Created new session");
 }
 
@@ -470,6 +472,16 @@ static_assert(UTILS_HAS_THREADING);
 
 bool FSession::run_frame() {
 
+    auto now = std::chrono::high_resolution_clock::now();
+
+    auto duration = std::chrono::duration<double>(now-m_last).count();
+
+    if (duration < 1/60.) {
+        spdlog::debug("{} OVERSPEED {}", getpid(), duration*1000);
+    }
+
+    m_last = now;
+
     // process events
 
     SDL_Event event;
@@ -514,12 +526,14 @@ bool FSession::run_frame() {
         SDL_Delay(delay);
     }
 
+    this->engine()->flushAndWait();
+
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());
         renderer->endFrame();
         spdlog::debug("{} Draw frame! {} {}", getpid(), m_frame_skip_count, delay);
         m_frame_skip_count = 0;
-        delay = std::clamp(delay - 1, 0, 100);
+        delay = std::clamp(delay - 1, 17, 100);
     } else {
         spdlog::debug("{} Skipping frame! {} {}", getpid(), m_frame_skip_count, delay);
 
@@ -537,6 +551,8 @@ bool FSession::run_frame() {
         //renderer->endFrame();
         
     }
+
+    this->engine()->flushAndWait();
 
     return true;
 }

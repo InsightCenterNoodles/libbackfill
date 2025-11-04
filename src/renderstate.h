@@ -29,7 +29,7 @@ public:
     ~RenderState();
 
     LocalPlatform const&  platform() { return m_platform; };
-    LocalEngine const&    engine() { return m_engine; };
+    LocalEngine      &    engine() { return m_engine; };
     LocalRenderer&        renderer() { return m_renderer; };
     utils::EntityManager& manager() { return m_manager; };
     filament::Scene*      scene() { return m_scene; }

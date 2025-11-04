@@ -10,6 +10,8 @@
 
 #include <SDL3/SDL_timer.h>
 
+#include <chrono>
+
 
 std::shared_ptr<filament::Skybox> make_skybox(filament::Skybox::Builder builder,
                                               filament::Engine*);
@@ -196,6 +198,7 @@ class FSession : public RenderState {
     bool                   m_is_left = false;
 
     unsigned m_frame_skip_count = 0;
+    std::chrono::high_resolution_clock::time_point m_last;
 
     // NEED TO KEEP THIS IN SYNC WITH THE API
     std::vector<filament::Material*> m_materials;
