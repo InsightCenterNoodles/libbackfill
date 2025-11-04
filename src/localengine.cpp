@@ -32,7 +32,7 @@ public:
 
 LocalEngine::LocalEngine(FConfig const& config) {
     auto backend = is_apple ? filament::backend::Backend::METAL
-                            : filament::backend::Backend::VULKAN;
+                            : filament::backend::Backend::OPENGL;
 
     // Can use the engine config system to add in stereo
     // This could be interesting if we use HW stereo to projectors.

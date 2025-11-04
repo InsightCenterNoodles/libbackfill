@@ -28,6 +28,7 @@ for mat_file in input_dir.glob("*.mat"):
         "-o", str(matbin_path),
         "--api", "metal",
         "--api", "vulkan",
+        "--api", "opengl",
         str(mat_file)
     ], check=True)
 

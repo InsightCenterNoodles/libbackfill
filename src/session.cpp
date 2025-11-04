@@ -477,7 +477,7 @@ bool FSession::run_frame() {
     auto duration = std::chrono::duration<double>(now-m_last).count();
 
     if (duration < 1/60.) {
-        spdlog::debug("{} OVERSPEED {}", getpid(), duration*1000);
+        //spdlog::debug("{} OVERSPEED {}", getpid(), duration*1000);
     }
 
     m_last = now;
@@ -522,28 +522,28 @@ bool FSession::run_frame() {
 
     static int delay = 17;
 
-    if (delay > 0) {
-        SDL_Delay(delay);
-    }
+    // if (delay > 0) {
+    //     SDL_Delay(delay);
+    // }
 
     this->engine()->flushAndWait();
 
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());
         renderer->endFrame();
-        spdlog::debug("{} Draw frame! {} {}", getpid(), m_frame_skip_count, delay);
-        m_frame_skip_count = 0;
-        delay = std::clamp(delay - 1, 17, 100);
+        //spdlog::debug("{} Draw frame! {} {}", getpid(), m_frame_skip_count, delay);
+        // m_frame_skip_count = 0;
+        // delay = std::clamp(delay - 1, 17, 100);
     } else {
-        spdlog::debug("{} Skipping frame! {} {}", getpid(), m_frame_skip_count, delay);
+        //spdlog::debug("{} Skipping frame! {} {}", getpid(), m_frame_skip_count, delay);
 
         // if (m_frame_skip_count ==0) {
         //     spdlog::debug("Recover...");
         //     this->renderer().rebuild_swapchain(this->platform());
         // }
 
-        m_frame_skip_count++;
-        delay += 1;
+        //m_frame_skip_count++;
+        //delay += 1;
         
         // forcing anyway gives a lockup
 

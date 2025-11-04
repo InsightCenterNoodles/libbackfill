@@ -24,7 +24,8 @@ void compute_off_axis_projection(ScreenDesc const& screen_desc,
 
     auto cam_right = normalize(float3 { H[0].x, H[0].y, H[0].z });
 
-    auto H_eye = mat4f::translation(+0.5f * iod * cam_right) * H;
+    //auto H_eye = mat4f::translation(+0.5f * iod * cam_right) * H;
+    auto H_eye = mat4f::translation(iod * cam_right) * H;
 
     // Set the camera transform
     camera->setModelMatrix(H_eye);

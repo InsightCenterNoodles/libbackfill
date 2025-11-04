@@ -322,6 +322,16 @@ void setup_lights(FSession* session) {
     }
 }
 
+std::string find_and_set(std::vector<std::string> const& args, const char* flag) {
+    for (int i = 0; i < args.size(); i++) {
+        auto const& a = args[i];
+        if (a == flag) {
+            return args.at(i+1);
+        }
+    }
+    return "";
+}
+
 int main(int argc, char** argv) {
 
     std::vector<std::string> arguments;
@@ -346,6 +356,19 @@ int main(int argc, char** argv) {
     fconfig_set_screen(ptr, 1920, 1200);
     fconfig_set_offaxis_plane(ptr, &plane);
     fconfig_set_log_debug(ptr, 1);
+
+    auto card = find_and_set(arguments, "-d");
+
+    if (!card.empty()) {
+        auto index = std::atoi(card.data());
+
+        fconfig_set_device(ptr, index);
+    }
+
+    auto is_fullscreen = find_and_set(arguments, "-f");
+    if (!is_fullscreen.empty()) {
+        fconfig_set_fullscreen(ptr, 1);
+    }
 
     auto* session = fs_init(ptr);
 
@@ -398,11 +421,11 @@ int main(int argc, char** argv) {
 
     // setup_lights(session);
 
-    if (!arguments.empty()) {
+    
 
-        auto maybe_image = arguments.back();
+    auto maybe_image = find_and_set(arguments, "-i");
 
-
+    if (!maybe_image.empty()) {
         if (std::filesystem::exists(maybe_image)) {
 
 

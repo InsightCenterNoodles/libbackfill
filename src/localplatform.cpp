@@ -46,6 +46,7 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
     spdlog::set_level(config.log_debug ? spdlog::level::debug
                                        : spdlog::level::info);
 
+    // XRandr may not be available on some platforms...
     SDL_SetHint(SDL_HINT_VIDEO_X11_XRANDR, "0");
 
     if (config.display.size()) { 
