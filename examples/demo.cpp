@@ -332,6 +332,7 @@ std::string find_and_set(std::vector<std::string> const& args, const char* flag)
     return "";
 }
 
+
 int main(int argc, char** argv) {
 
     std::vector<std::string> arguments;
@@ -344,11 +345,21 @@ int main(int argc, char** argv) {
 
     spdlog::info("Starting up...");
 
+
+#if 1
     FScreenPlane plane {
         .lower_left  = { -2.5, 0, -1.768 },
         .lower_right = { 2.5, 0, -1.768 },
         .upper_right = { 2.5, 2.5, -1.768 },
     };
+#else
+
+    FScreenPlane plane {
+        .lower_left  = { -2.5, 0, -0.1750 },
+        .lower_right = { 2.5, 0, -0.1750 },
+        .upper_right = { 2.5, 0, -1.768 },
+    };
+#endif
 
     auto* ptr = fconfig_init();
 
@@ -421,7 +432,8 @@ int main(int argc, char** argv) {
 
     // setup_lights(session);
 
-    
+    bool debug_off_axis = !find_and_set(arguments, "-m").empty();
+
 
     auto maybe_image = find_and_set(arguments, "-i");
 
@@ -484,6 +496,7 @@ int main(int argc, char** argv) {
 
     float debug_head = 0;
 
+
     auto prev_frame_time = std::chrono::high_resolution_clock::now();
 
     while (fs_frame(session)) {
@@ -504,5 +517,11 @@ int main(int argc, char** argv) {
         debug_head += 1.0f * duration;
 
         prev_frame_time = frame_time;
+
+        if (debug_off_axis) {
+            fs_frame(session);
+            fs_debug_camera_obj(session, "camera.obj");
+            break;
+        }
     }
 }

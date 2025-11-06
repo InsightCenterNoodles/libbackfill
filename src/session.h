@@ -230,6 +230,7 @@ public:
     void set_parent(utils::Entity child, utils::Entity parent);
 
     void debug_camera(mat4* out_model, mat4* out_proj);
+    void debug_camera_obj(char const* file);
 
     bool run_frame();
 };

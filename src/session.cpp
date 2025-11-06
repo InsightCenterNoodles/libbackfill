@@ -21,12 +21,15 @@
 #include <image/LinearImage.h>
 #include <imageio/ImageDecoder.h>
 #include <math/mat4.h>
+#include <math/vec4.h>
 #include <unistd.h>
 #include <utils/EntityManager.h>
 
 #include <backend/BufferDescriptor.h>
 
 #include <utils/EntityManager.h>
+
+#include <fstream>
 
 #include "config.h"
 #include "generated.h"
@@ -466,6 +469,121 @@ void FSession::debug_camera(mat4* out_model, mat4* out_proj) {
 
     *(filament::math::mat4f*)out_model = om;
     *(filament::math::mat4f*)out_proj  = op;
+}
+
+void FSession::debug_camera_obj(char const* file) {
+    using namespace filament;
+
+    auto* c = this->camera();
+
+    bool depthZeroToOne = false;
+
+    // Build transforms
+    auto const M    = math::mat4f(c->getModelMatrix());      // camera -> world
+    auto const P    = math::mat4f(c->getProjectionMatrix()); // projection
+    auto const invP = inverse(P);                            // clip -> view
+
+    // NDC cube corners (OpenGL style z = -1 (near) / +1 (far)).
+    // If using Vulkan/DirectX depth, switch to z = 0 (near) / 1 (far).
+    const float zn = depthZeroToOne ? 0.0f : -1.0f;
+    const float zf = 1.0f;
+
+    // 8 corners in NDC (x,y,z)
+    const std::array<math::float3, 8> ndc = { {
+        { -1.f, -1.f, zn },
+        { +1.f, -1.f, zn },
+        { +1.f, +1.f, zn },
+        { -1.f, +1.f, zn }, // near  (0..3)
+        { -1.f, -1.f, zf },
+        { +1.f, -1.f, zf },
+        { +1.f, +1.f, zf },
+        { -1.f, +1.f, zf } // far   (4..7)
+    } };
+
+    // Unproject to world-space
+    std::array<math::float3, 8> world;
+    for (size_t i = 0; i < ndc.size(); ++i) {
+        const math::float4 c { ndc[i].x, ndc[i].y, ndc[i].z, 1.0f }; // clip
+        math::float4       v = invP * c; // view (homogeneous)
+        if (v.w == 0.0f)
+            throw std::runtime_error(
+                "Invalid projection: w == 0 after inverse(P)*clip");
+        v /= v.w;               // view (cartesian)
+        math::float4 w = M * v; // world (homogeneous)
+        if (w.w != 0.0f) w /= w.w;
+        world[i] = math::float3 { w.x, w.y, w.z };
+    }
+
+    // Edge list (12 lines): near rectangle, far rectangle, 4 side edges
+    constexpr int edges[12][2] = {
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, // near
+        { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 }, // far
+        { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }  // sides
+    };
+
+    // Write OBJ
+    std::ofstream out(file);
+    if (!out) {
+        spdlog::critical("Failed to open OBJ path for writing: {}", file);
+        exit(EXIT_FAILURE);
+    }
+
+    out << "# Frustum + Screen OBJ\n";
+
+    // --- Frustum vertices ---
+    out << "\n# Frustum vertices (8)\n";
+    for (const auto& p : world)
+        out << "v " << p.x << ' ' << p.y << ' ' << p.z << '\n';
+
+    // --- Frustum lines ---
+    out << "\ng frustum_lines\n";
+    for (const auto& e : edges)
+        out << "l " << (e[0] + 1) << ' ' << (e[1] + 1) << '\n';
+
+    // --- Screen quad: either provided plane, or near face of frustum ---
+    // Collect screen vertices (append after the first 8) in CCW order:
+
+
+    std::array<math::float3, 4> screen;
+    bool haveExplicitScreen = this->m_offaxis_screen_info.has_value();
+
+    if (haveExplicitScreen) {
+        auto const& screen_info = this->m_offaxis_screen_info.value();
+
+        const math::float3 ll = screen_info.lower_left;
+        const math::float3 lr = screen_info.lower_right;
+        const math::float3 ur = screen_info.upper_right;
+        const math::float3 ul = ll + (ur - lr); // complete the quad
+        screen                = { ll, lr, ur, ul };
+    } else {
+        // Use frustum near face as "screen" (0..3 are near: LL, LR, UR, UL)
+        screen = { world[0], world[1], world[2], world[3] };
+    }
+
+    // Append screen vertices
+    const int baseIndex = 8; // after frustum verts
+    out << "\n# Screen quad vertices (4)\n";
+    for (const auto& p : screen)
+        out << "v " << p.x << ' ' << p.y << ' ' << p.z << '\n';
+
+    // Lines around the screen quad (wire outline)
+    out << "\ng screen_outline\n";
+    out << "l " << baseIndex + 1 << ' ' << baseIndex + 2 << '\n';
+    out << "l " << baseIndex + 2 << ' ' << baseIndex + 3 << '\n';
+    out << "l " << baseIndex + 3 << ' ' << baseIndex + 4 << '\n';
+    out << "l " << baseIndex + 4 << ' ' << baseIndex + 1 << '\n';
+
+    // Filled face for the screen (so it's visible as a surface in Blender)
+    out << "\ng screen_face\n";
+    out << "f " << baseIndex + 1 << ' ' << baseIndex + 2 << ' ' << baseIndex + 3
+        << ' ' << baseIndex + 4 << '\n';
+
+
+    out.flush();
+    if (!out) {
+        spdlog::critical("Failed while writing OBJ file: {}", file);
+        exit(EXIT_FAILURE);
+    }
 }
 
 static_assert(UTILS_HAS_THREADING);

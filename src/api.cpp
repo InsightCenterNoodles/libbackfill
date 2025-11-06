@@ -405,6 +405,10 @@ void fs_debug_camera(FSession* ptr, mat4* out_model, mat4* out_proj) {
     ptr->debug_camera(out_model, out_proj);
 }
 
+void fs_debug_camera_obj(FSession* ptr, char const* file) {
+    ptr->debug_camera_obj(file);
+}
+
 void fs_add_light(FSession* ptr, i32 entity, FLightConfig* config) {
     config->build(*(ptr->engine()), utils::Entity::import(entity));
 }

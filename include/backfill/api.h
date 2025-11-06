@@ -283,6 +283,7 @@ void fs_set_parent(FSession*, i32 child, i32 parent);
 
 /// Extract current camera matrix info
 void fs_debug_camera(FSession*, mat4* out_model, mat4* out_proj);
+void fs_debug_camera_obj(FSession*, char const* file);
 
 /// Add a light component to an entity. You may destroy or reuse the
 /// configuration after this call.
