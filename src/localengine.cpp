@@ -19,7 +19,8 @@ class CustomVulkanPlatform : public filament::backend::VulkanPlatform {
     VulkanPlatform::Customization m_customization;
 
 public:
-    CustomVulkanPlatform(SDL_Window* window, std::optional<int> device_index) {
+    CustomVulkanPlatform(SDL_Window* window, std::optional<int> device_index)
+        : m_window(window) {
         VulkanPlatform::Customization::GPUPreference pref;
 
         if (device_index.has_value()) {

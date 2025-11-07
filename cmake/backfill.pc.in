@@ -6,5 +6,5 @@ includedir=@includedir@
 Name: backfill
 Description: The backfill immersive rendering library
 Version: @PROJECT_VERSION@
-Libs: -L${libdir} -lbackfill_full
+Libs: -L${libdir} -lbackfill
 Cflags: -I${includedir}

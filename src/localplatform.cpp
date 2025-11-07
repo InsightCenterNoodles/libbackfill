@@ -24,6 +24,9 @@ void* obtain_native_window(SDL_Window* window) {
     // for some reason this doesnt seem to be working...
     ptr->setDisplaySyncEnabled(true);
 
+    // TODO: clean up metal view. this is not critical as our workflow
+    // does not let you create windows at random, only one
+
     return layer;
 #else
     expect(SDL_strcmp(SDL_GetCurrentVideoDriver(), "x11") == 0,
@@ -60,9 +63,9 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     uint32_t window_flags = SDL_WINDOW_HIGH_PIXEL_DENSITY;
 
-    #ifndef  __APPLE__
+    if (config.renderer == filament::backend::Backend::VULKAN) {
         window_flags |= SDL_WINDOW_VULKAN;
-    #endif
+    }
 
     m_window_pointer = SDL_CreateWindow(
         config.title.c_str(), config.w, config.h, window_flags);
@@ -77,6 +80,10 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 }
 
 LocalPlatform::~LocalPlatform() {
+    // #if __APPLE__
+    //     SDL_Metal_DestroyView(
+    // #endif
+
     SDL_DestroyWindow(m_window_pointer);
     SDL_Quit();
 }
