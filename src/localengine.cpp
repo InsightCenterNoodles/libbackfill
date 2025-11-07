@@ -51,7 +51,7 @@ LocalEngine::LocalEngine(FConfig const& config) {
 
     filament::Engine::Config engine_config;
 
-    engine_config.jobSystemThreadCount = 8;
+    engine_config.jobSystemThreadCount = config.thread_count;
 
     builder.config(&engine_config);
 

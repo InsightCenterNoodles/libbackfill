@@ -306,6 +306,9 @@ void fconfig_set_log_debug(FConfig* ptr, uint8_t b) {
 void fconfig_set_fullscreen(FConfig* ptr, uint8_t b) {
     ptr->full_screen = b;
 }
+void fconfig_set_thread_count(FConfig* ptr, uint8_t count) {
+    ptr->thread_count = count;
+}
 void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane const* plane) {
     ScreenDesc desc {
         .lower_left = {

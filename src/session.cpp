@@ -644,7 +644,7 @@ bool FSession::run_frame() {
     //     SDL_Delay(delay);
     // }
 
-    this->engine()->flushAndWait();
+    // this->engine()->flushAndWait();
 
     if (renderer->beginFrame(swap_chain)) {
         renderer->render(view());
@@ -670,7 +670,7 @@ bool FSession::run_frame() {
         
     }
 
-    this->engine()->flushAndWait();
+    // this->engine()->flushAndWait();
 
     return true;
 }

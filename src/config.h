@@ -20,6 +20,8 @@ struct FConfig {
     int w = 1024;
     int h = 768;
 
+    int thread_count = 8;
+
     bool full_screen = false;
 
     bool left_eye = false;
