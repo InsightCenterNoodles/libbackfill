@@ -346,6 +346,9 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
 
 FSession::~FSession() {
     spdlog::debug("Closing session...");
+    // we are leaving this commented until we have a better shutdown
+    // otherwise we get a crash
+
     // for (auto* m : m_materials) {
     //        filament::Engine* engine = this->engine();
     //      engine->destroy(m);
@@ -430,6 +433,8 @@ void FSession::del_renderable(utils::Entity e) {
     auto& rm = ptr->getRenderableManager();
 
     rm.destroy(e);
+
+    m_bound_render_resources.erase(utils::Entity::smuggle(e));
 }
 
 void FSession::add_transform(utils::Entity e, mat4 const* tf) {
@@ -525,7 +530,7 @@ void FSession::debug_camera_obj(char const* file) {
     std::ofstream out(file);
     if (!out) {
         spdlog::critical("Failed to open OBJ path for writing: {}", file);
-        exit(EXIT_FAILURE);
+        return;
     }
 
     out << "# Frustum + Screen OBJ\n";
@@ -582,7 +587,7 @@ void FSession::debug_camera_obj(char const* file) {
     out.flush();
     if (!out) {
         spdlog::critical("Failed while writing OBJ file: {}", file);
-        exit(EXIT_FAILURE);
+        return;
     }
 }
 
