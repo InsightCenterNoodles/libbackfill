@@ -242,6 +242,8 @@ void fconfig_set_thread_count(FConfig*, uint8_t);
 /// Enable off-axis mode using this screen plane.
 void fconfig_set_offaxis_plane(FConfig*, FScreenPlane const*);
 
+typedef enum FRenderer { R_METAL, R_OPENGL, R_VULKAN } FRenderer;
+void fconfig_set_renderer(FConfig*, FRenderer renderer);
 
 /// Eye selection for stereo rendering
 typedef enum FEye { EYE_LEFT, EYE_RIGHT } FEye;

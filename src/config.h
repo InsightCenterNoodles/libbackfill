@@ -1,5 +1,6 @@
 #pragma once
 
+#include "backend/DriverEnums.h"
 #include <math/vec3.h>
 
 #include <optional>
@@ -19,6 +20,8 @@ struct FConfig {
 
     int w = 1024;
     int h = 768;
+
+    filament::backend::Backend renderer = filament::backend::Backend::DEFAULT;
 
     int thread_count = 8;
 

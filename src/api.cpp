@@ -331,6 +331,15 @@ void fconfig_set_offaxis_plane(FConfig* ptr, FScreenPlane const* plane) {
     ptr->screen_info = desc;
 }
 
+void fconfig_set_renderer(FConfig* ptr, FRenderer renderer) {
+    switch (renderer) {
+
+    case R_METAL: ptr->renderer = filament::backend::Backend::METAL; break;
+    case R_OPENGL: ptr->renderer = filament::backend::Backend::OPENGL; break;
+    case R_VULKAN: ptr->renderer = filament::backend::Backend::VULKAN; break;
+    }
+}
+
 void fconfig_set_stereo_eye(FConfig* ptr, FEye eye) {
     ptr->left_eye = eye == EYE_LEFT;
 }

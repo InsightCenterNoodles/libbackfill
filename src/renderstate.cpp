@@ -8,7 +8,7 @@
 
 RenderState::RenderState(FConfig const& config)
     : m_platform(config),
-      m_engine(config),
+      m_engine(m_platform, config),
       m_renderer(m_engine, m_platform),
       m_manager(utils::EntityManager::get()) {
 

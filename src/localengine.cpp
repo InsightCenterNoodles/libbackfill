@@ -1,6 +1,10 @@
 #include "localengine.h"
 
+#include "localplatform.h"
+
 #include <backend/platforms/VulkanPlatform.h>
+
+#include <SDL3/SDL_vulkan.h>
 
 
 #ifdef __APPLE__
@@ -11,28 +15,69 @@ constexpr bool is_apple = false;
 
 /// Allow the selection of vulkan adapters
 class CustomVulkanPlatform : public filament::backend::VulkanPlatform {
+    SDL_Window*                   m_window;
     VulkanPlatform::Customization m_customization;
 
 public:
-    CustomVulkanPlatform(int device_index) {
+    CustomVulkanPlatform(SDL_Window* window, std::optional<int> device_index) {
         VulkanPlatform::Customization::GPUPreference pref;
 
-        pref.index = std::clamp(device_index, -1, 255);
-
-        spdlog::debug("Using device at index {}", pref.index);
-
-        m_customization = { .gpu = pref };
+        if (device_index.has_value()) {
+            pref.index = std::clamp(*device_index, -1, 255);
+            spdlog::debug("Using device at index {}", pref.index);
+            m_customization.gpu = pref;
+        }
     }
 
-    virtual VulkanPlatform::Customization
-    getCustomization() const noexcept override {
+    VulkanPlatform::Customization getCustomization() const noexcept override {
         return m_customization;
+    }
+
+    ExtensionSet getRequiredInstanceExtensions() override {
+        uint32_t           instance_count = 0;
+        const char* const* exts =
+            SDL_Vulkan_GetInstanceExtensions(&instance_count);
+
+        if (!exts) {
+            spdlog::critical("Unable to discover required instance extensions");
+        }
+
+        ExtensionSet ret;
+
+        for (uint32_t i = 0; i < instance_count; i++) {
+            ret.insert(utils::CString(exts[i]));
+        }
+
+        return ret;
+    }
+
+    SurfaceBundle createVkSurfaceKHR(void*      nativeWindow,
+                                     VkInstance instance,
+                                     uint64_t   flags) const noexcept override {
+        // if null, delegate to superior
+        if (!nativeWindow) {
+            return filament::backend::VulkanPlatform::createVkSurfaceKHR(
+                nativeWindow, instance, flags);
+        }
+
+        VkSurfaceKHR surface;
+        VkExtent2D   extent;
+
+        SDL_Vulkan_CreateSurface(m_window, instance, nullptr, &surface);
+
+        int32_t width, height;
+        SDL_GetWindowSizeInPixels(m_window, &width, &height);
+
+        extent.width  = width;
+        extent.height = height;
+
+        return std::make_tuple(surface, extent);
     }
 };
 
-LocalEngine::LocalEngine(FConfig const& config) {
-    auto backend = is_apple ? filament::backend::Backend::METAL
-                            : filament::backend::Backend::OPENGL;
+LocalEngine::LocalEngine(LocalPlatform const& platform, FConfig const& config) {
+
+    auto backend = config.renderer;
 
     // Can use the engine config system to add in stereo
     // This could be interesting if we use HW stereo to projectors.
@@ -41,10 +86,10 @@ LocalEngine::LocalEngine(FConfig const& config) {
         filament::backend::FeatureLevel::FEATURE_LEVEL_3);
 
 
-    if (backend == filament::backend::Backend::VULKAN &&
-        config.device.has_value()) {
+    if (backend == filament::backend::Backend::VULKAN) {
 
-        m_custom_backend = new CustomVulkanPlatform(*config.device);
+        m_custom_backend =
+            new CustomVulkanPlatform(platform.window_pointer(), config.device);
 
         builder.platform(m_custom_backend);
     }

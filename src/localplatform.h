@@ -16,6 +16,8 @@ public:
 
     ~LocalPlatform();
 
+    SDL_Window* window_pointer() const { return m_window_pointer; }
+
     void* native_window() const { return m_native_window; }
 
     std::array<uint32_t, 2> frame_size() const;

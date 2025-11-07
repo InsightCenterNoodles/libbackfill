@@ -8,6 +8,7 @@ namespace filament {
 class Engine;
 }
 
+class LocalPlatform;
 
 /// Our implementation of the Filament engine
 class LocalEngine {
@@ -17,7 +18,7 @@ class LocalEngine {
 public:
     DISABLE_MOVE_COPY(LocalEngine);
 
-    LocalEngine(FConfig const& config);
+    LocalEngine(LocalPlatform const& platform, FConfig const& config);
 
     ~LocalEngine();
 

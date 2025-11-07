@@ -8,7 +8,7 @@ include(cmake/CPM.cmake)
 
 CPMAddPackage(
     NAME SDL
-    URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.18.tar.gz
+    URL https://github.com/libsdl-org/SDL/archive/refs/tags/release-3.2.26.tar.gz
     OPTIONS
         "BUILD_SHARED_LIBS OFF"
         "SDL_SHARED OFF"
