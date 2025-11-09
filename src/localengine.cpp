@@ -6,13 +6,6 @@
 
 #include <SDL3/SDL_vulkan.h>
 
-
-#ifdef __APPLE__
-constexpr bool is_apple = true;
-#else
-constexpr bool is_apple = false;
-#endif
-
 /// Allow the selection of vulkan adapters
 class CustomVulkanPlatform : public filament::backend::VulkanPlatform {
     SDL_Window*                   m_window;

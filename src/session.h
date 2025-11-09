@@ -2,11 +2,11 @@
 
 #include "backfill/api.h"
 #include "geometry.h"
+#include "material.h"
 #include "renderstate.h"
 
 #include <filament/Box.h>
 #include <filament/Skybox.h>
-#include <filament/Texture.h>
 
 #include <SDL3/SDL_timer.h>
 
@@ -17,11 +17,6 @@ std::shared_ptr<filament::Skybox> make_skybox(filament::Skybox::Builder builder,
                                               filament::Engine*);
 
 using SkyboxPtr = std::shared_ptr<filament::Skybox>;
-
-enum class MaterialType {
-    Lit,
-    InstanceLit,
-};
 
 // =============================================================================
 
@@ -62,98 +57,6 @@ public:
 
 C_BRIDGE(FMesh, RefCounted<FMeshContent>);
 
-// =============================================================================
-
-
-class FMaterialContent {
-    filament::Engine*           m_engine         = nullptr;
-    filament::MaterialInstance* m_instance       = nullptr;
-    unsigned                    m_instance_count = 0;
-
-public:
-    FMaterialContent(filament::Engine*           engine,
-                     filament::MaterialInstance* instance,
-                     unsigned                    use_instances = 0);
-
-    ~FMaterialContent();
-
-    unsigned instance_count() const { return m_instance_count; }
-
-    void set_color(FColor const& c);
-
-    void set_rm(float r, float m);
-
-    void set_instances(mat4 const* data, size_t count);
-
-    operator filament::MaterialInstance*() const { return m_instance; }
-};
-
-C_BRIDGE(FMaterial, RefCounted<FMaterialContent>);
-
-// =============================================================================
-
-namespace image {
-class LinearImage;
-}
-
-struct ImageDescription {
-    size_t width;
-    size_t height;
-    size_t n_channels;
-    size_t size;
-};
-
-class FImageContent {
-
-    std::unique_ptr<image::LinearImage> m_pending;
-
-    ImageDescription m_description;
-
-    // filament::Texture::PixelBufferDescriptor m_buffer;
-
-    // static void completion(void* buffer, size_t size, void* user);
-
-public:
-    DISABLE_MOVE_COPY(FImageContent);
-
-    FImageContent(FBlobRef);
-    ~FImageContent();
-
-    auto const& description() const { return m_description; }
-
-    image::LinearImage const& image() const { return *m_pending; }
-};
-
-C_BRIDGE(FImage, RefCounted<FImageContent>);
-
-// =============================================================================
-
-struct FTextureConfig {
-
-    Owned<FImageContent> image;
-
-    filament::Texture::Builder builder;
-
-    FTextureConfig(RefCounted<FImageContent>*);
-};
-
-class FTextureContent {
-    Owned<FImageContent> m_image;
-
-    filament::Engine*  m_engine;
-    filament::Texture* m_texture;
-
-    static void completion(void* buffer, size_t size, void* user);
-
-public:
-    DISABLE_MOVE_COPY(FTextureContent);
-    FTextureContent(FSession*, FTextureConfig&);
-    ~FTextureContent();
-
-    filament::Texture* texture() { return m_texture; }
-};
-
-C_BRIDGE(FTexture, RefCounted<FTextureContent>);
 
 // =============================================================================
 
@@ -200,8 +103,7 @@ class FSession : public RenderState {
     unsigned m_frame_skip_count = 0;
     std::chrono::high_resolution_clock::time_point m_last;
 
-    // NEED TO KEEP THIS IN SYNC WITH THE API
-    std::vector<filament::Material*> m_materials;
+    filament::gltfio::MaterialProvider* m_provider;
 
     std::unordered_map<i32, UsedMatMesh> m_bound_render_resources;
 
@@ -214,7 +116,8 @@ public:
 
     void update_head(float3 pos, float4 quat);
 
-    filament::MaterialInstance* new_instance_for_type(MaterialType);
+    filament::MaterialInstance*
+    new_instance_for_type(FMaterialConfigInternal const&);
 
     utils::Entity new_entity();
     void          delete_entity(utils::Entity);

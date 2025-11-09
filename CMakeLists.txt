@@ -46,6 +46,12 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
 )
 
+CPMAddPackage(
+    NAME magic_enum
+    GITHUB_REPOSITORY Neargye/magic_enum
+    GIT_TAG v0.9.7
+)
+
 
 if (UNIX AND NOT APPLE)
     set(LINUX TRUE)
@@ -64,7 +70,6 @@ project(
 # Library Target ===============================================================
 
 set(BACKFILL_SOURCES
-    src/generated.h src/generated.cpp
     src/geometry.h  src/geometry.cpp
     src/projection.h src/projection.cpp
     src/utility.h
@@ -77,7 +82,8 @@ set(BACKFILL_SOURCES
     src/api.cpp
 )
 
-add_library(backfill SHARED ${BACKFILL_SOURCES})
+add_library(backfill SHARED ${BACKFILL_SOURCES}
+    src/material.h src/material.cpp)
 
 set_target_properties(backfill PROPERTIES CXX_STANDARD 20)
 
@@ -133,7 +139,9 @@ target_link_libraries(backfill
         imageio
         ibl
         filament-iblprefilter
+        gltfio
         SDL3-static
+        magic_enum
         spdlog::spdlog_header_only
 )
 
@@ -162,20 +170,6 @@ if(WIN32)
     # Export all symbols automatically for a quick DLL (replace with explicit exports later).
     set_target_properties(backfill PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif()
-
-# For dev quality of life ======================================================
-
-set(MATERIAL_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/bakedColor.mat
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/primaryLit.mat
-    ${CMAKE_CURRENT_SOURCE_DIR}/assets/materials/primaryInstanceLit.mat
-)
-
-
-
-add_custom_target(materials SOURCES ${MATERIAL_FILES})
-
-source_group("Materials" FILES ${MATERIAL_FILES})
 
 # Text exe =====================================================================
 add_executable(backfill_demo

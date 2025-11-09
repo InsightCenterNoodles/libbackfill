@@ -120,38 +120,6 @@ FMeshContent::~FMeshContent() {
     spdlog::debug("Destroying mesh assets {}", (void*)this);
 }
 
-// =============================================================================
-
-FMaterialContent::FMaterialContent(filament::Engine*           engine,
-                                   filament::MaterialInstance* instance,
-                                   unsigned                    use_instances)
-    : m_engine(engine), m_instance(instance), m_instance_count(use_instances) {
-    spdlog::debug("new material: {}", (void*)m_instance);
-}
-
-FMaterialContent::~FMaterialContent() {
-    spdlog::debug("Destroying material: {}", (void*)m_instance);
-    m_engine->destroy(m_instance);
-}
-
-void FMaterialContent::set_color(FColor const& c) {
-    m_instance->setParameter(
-        "baseColor", filament::RgbaType::LINEAR, { c.r, c.g, c.b, c.a });
-}
-
-void FMaterialContent::set_rm(float r, float m) {
-    m_instance->setParameter("roughness", r);
-    m_instance->setParameter("metallic", m);
-}
-
-void FMaterialContent::set_instances(mat4 const* data, size_t count) {
-    static_assert(sizeof(mat4) == sizeof(filament::math::mat4f));
-    if (count > 1024) {
-        spdlog::warn("Setting instance counts above 1024 could cause "
-                     "unexpected behavior!");
-    }
-    m_instance->setParameter("inst_data", (filament::math::mat4f*)data, count);
-}
 
 // =============================================================================
 
@@ -228,49 +196,6 @@ FImageContent::~FImageContent() {
     spdlog::debug("Destroying image {}", (void*)this);
 }
 
-// =============================================================================
-
-FTextureConfig::FTextureConfig(RefCounted<FImageContent>* ptr)
-    : image(ptr->borrow()) {
-    auto const& desc = image->description();
-    builder.width(desc.width)
-        .height(desc.height)
-        .levels(0xff) // will be automatically clamped
-        .sampler(filament::Texture::Sampler::SAMPLER_2D)
-        .usage(filament::Texture::Usage::DEFAULT);
-}
-
-
-void FTextureContent::completion(void* buffer, size_t, void* user) {
-    ((FTextureContent*)user)->m_image = {};
-}
-
-FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
-    : m_image(config.image), m_engine(session->engine()) {
-    m_texture = config.builder.build(*m_engine);
-
-    auto const& desc = m_image->description();
-
-    // Transfer to GPU. The PBD only references the data, thus it must stay
-    // alive, while uploading. There is an internal gpu buffer id it holds.
-    auto buffer =
-        filament::Texture::PixelBufferDescriptor(m_image->image().getPixelRef(),
-                                                 desc.size,
-                                                 filament::Texture::Format::RGB,
-                                                 filament::Texture::Type::FLOAT,
-                                                 completion,
-                                                 this);
-
-    m_texture->setImage(*m_engine, 0, std::move(buffer));
-
-    spdlog::debug("Creating texture {}", (void*)this);
-}
-
-FTextureContent::~FTextureContent() {
-    m_engine->destroy(m_texture);
-
-    spdlog::debug("Destroying texture {}", (void*)this);
-}
 
 // =============================================================================
 
@@ -324,17 +249,7 @@ EnvLightContent::~EnvLightContent() {
 // =============================================================================
 
 FSession::FSession(FConfig const& config) : RenderState(config) {
-    m_materials.push_back(
-        filament::Material::Builder()
-            .package(generated::get_primarylit_matbin().data(),
-                     generated::get_primarylit_matbin().size())
-            .build(*engine()));
-
-    m_materials.push_back(
-        filament::Material::Builder()
-            .package(generated::get_primaryinstancelit_matbin().data(),
-                     generated::get_primaryinstancelit_matbin().size())
-            .build(*engine()));
+    m_provider = filament::gltfio::createJitShaderProvider(engine(), true);
 
     m_offaxis_screen_info = config.screen_info;
     m_is_left             = config.left_eye;
@@ -373,9 +288,14 @@ void FSession::update_head(float3 pos, float4 quat) {
     m_head_rot = { quat.w, quat.x, quat.y, quat.z };
 }
 
-filament::MaterialInstance* FSession::new_instance_for_type(MaterialType type) {
-    spdlog::debug("Creating new instance for material type {}", (int)type);
-    return m_materials.at((size_t)type)->createInstance();
+filament::MaterialInstance*
+FSession::new_instance_for_type(FMaterialConfigInternal const& internal) {
+
+    auto key = internal.material_key;
+
+    filament::gltfio::UvMap map;
+
+    return m_provider->createMaterialInstance(&key, &map);
 }
 
 utils::Entity FSession::new_entity() {
@@ -415,8 +335,6 @@ void FSession::add_renderable(utils::Entity                 e,
                   0,
                   mesh.index().index_count())
         .castShadows(true);
-
-    if (mat.instance_count() > 0) { b.instances(mat.instance_count()); }
 
     m_bound_render_resources[utils::Entity::smuggle(e)] = {
         .material = mat_ptr->borrow(),

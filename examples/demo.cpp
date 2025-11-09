@@ -389,12 +389,18 @@ int main(int argc, char** argv) {
 
     fs_set_skybox_color(session, { 0.1, 0.125, 0.25, 1.0 });
 
-    auto mat_config = FMaterialConfig {};
+    auto mat_config = fmaterialconfig_init();
 
-    auto* mat = fmaterial_init(session, &mat_config);
+    fmc_set_option(mat_config, FMatTexOption::IOR, 1);
+    fmc_set_option(mat_config, FMatTexOption::TRANSMISSION, 1);
+
+    auto* mat = fmaterial_init(session, mat_config);
+
+    fmaterialconfig_destroy(mat_config);
 
     fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
     fmaterial_set_roughness_metallic(mat, .25, 1);
+    fmaterial_set_transmission(mat, .9);
 
     auto sphere = make_sphere();
 
@@ -475,7 +481,7 @@ int main(int argc, char** argv) {
 
             fblob_release(img_blob);
 
-            auto* texture_cfg = ftex_config_init(image, R11F_G11F_B10F);
+            auto* texture_cfg = ftex_config_init(image, FMT_R11F_G11F_B10F);
 
             auto* texture = ftex_init(session, texture_cfg);
 

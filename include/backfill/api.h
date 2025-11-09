@@ -144,7 +144,9 @@ typedef struct FTexture       FTexture;
 typedef struct FTextureConfig FTextureConfig;
 
 typedef enum TextureFormat {
-    R11F_G11F_B10F,
+    FMT_RGB8,
+    FMT_RGBA8,
+    FMT_R11F_G11F_B10F,
 } TextureFormat;
 
 FTextureConfig* ftex_config_init(FImage*, TextureFormat);
@@ -180,23 +182,80 @@ void fmesh_release(FMesh*);
 
 // =============================================================================
 
-// In the future we can have material classes like Unlit, Lit, etc.
-// consider new instance format (maybe use textures)
-// used a compressed quat (recover qw). only allow uniform texture scale?
-// would uniform scale break our arrows?
-// px, py, pz, uvx
-// qx, qy, qz, uvy
-// sx, sy, sz, uvs
+typedef enum FMatTexOption {
+    DOUBLE_SIDED,
+    UNLIT,
+    CLEARCOAT,
+    TRANSMISSION,
+    IOR
+} FMatTexOption;
 
-typedef enum MatConfigFlags {
-    MC_UNLIT = (1 << 0),
-} MatConfigFlags;
+typedef enum FMatTexSemantic {
+    BASE_COLOR_TEX,
+    NORMAL_TEX,
+    OCCLUSION_TEX,
+    EMISSIVE_TEX,
+    MAT_ROUGH_TEX,
+    CLEARCOAT_TEX,
+    CLEARCOAT_ROUGH_TEX,
+    CLEARCOAT_NORMAL_TEX,
+} FMatTexSemantic;
 
-typedef struct FMaterialConfig {
-    uint32_t mask;
-    uint32_t instance_count;
-} FMaterialConfig;
+typedef enum FMatTexUVSlot { UV0, UV1 } FMatTexUVSlot;
 
+typedef enum FMatBlendType {
+    OPAQUE,
+    MASK,
+    BLEND,
+} FMatBlendType;
+
+typedef struct FMaterialConfig FMaterialConfig;
+
+
+typedef enum FMinFilter {
+    MIN_FILTER_NEAREST,
+    MIN_FILTER_LINEAR,
+    MIN_FILTER_LINEAR_MIPMAP_LINEAR
+} FMinFilter;
+
+typedef enum FMagFilter {
+    MAG_FILTER_NEAREST,
+    MAG_FILTER_LINEAR,
+} FMagFilter;
+
+typedef enum FWrapMode {
+    WRAP_CLAMP,
+    WRAP_REPEAT,
+    WRAP_MIRROR_REPEAT,
+} FWrapMode;
+
+typedef enum FTexAxis {
+    AXIS_U,
+    AXIS_V,
+    AXIS_W,
+} FTexAxis;
+
+typedef struct Sampler {
+    uint32_t pack;
+} Sampler;
+
+void fsamp_init(Sampler*);
+void fsamp_set_mag(Sampler*, FMagFilter);
+void fsamp_set_min(Sampler*, FMinFilter);
+void fsamp_set_wrap(Sampler*, FWrapMode, FTexAxis);
+void fsamp_set_aniso(Sampler*, uint8_t);
+
+
+FMaterialConfig* fmaterialconfig_init();
+void             fmaterialconfig_destroy(FMaterialConfig*);
+
+void fmc_set_option(FMaterialConfig*, FMatTexOption, uint8_t);
+void fmc_set_texture(FMaterialConfig*,
+                     FMatTexSemantic,
+                     FMatTexUVSlot,
+                     FTexture*,
+                     Sampler*);
+void fmc_set_blend(FMaterialConfig*, FMatBlendType);
 
 FMaterial* fmaterial_init(FSession*, FMaterialConfig*);
 void       fmaterial_acquire(FMaterial*);
@@ -204,10 +263,11 @@ void       fmaterial_release(FMaterial*);
 
 void fmaterial_set_base_color(FMaterial*, FColor);
 void fmaterial_set_roughness_metallic(FMaterial*, float r, float m);
-
-/// We use one matrix per instance. The data is copied into a UBO, which means a
-/// limit of 1024 instances per material instance.
-void fmaterial_set_instances(FMaterial*, mat4 const* data, u64 count);
+void fmaterial_set_ao_factor(FMaterial*, float ao);
+void fmaterial_set_emissive(FMaterial*, float strength, float3 factor);
+void fmaterial_set_transmission(FMaterial*, float tf);
+void fmaterial_set_ior(FMaterial*, float ior);
+void fmaterial_set_texture(FMaterial*, FMatTexSemantic, FTexture*, Sampler*);
 
 // =============================================================================
 

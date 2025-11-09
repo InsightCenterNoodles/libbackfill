@@ -1,6 +1,7 @@
 #include "backfill/api.h"
 
 #include "config.h"
+#include "material.h"
 #include "session.h"
 #include "utility.h"
 
@@ -108,59 +109,6 @@ FBlobRef fblobref_whole(FBlob* ptr) {
     };
 }
 
-// =============================================================================
-
-
-FImage* fimg_init_exr(FBlobRef ref) {
-    auto ptr = make_refcounted_unsafe<FImageContent>(ref);
-
-    return from_rc(ptr);
-}
-void fimg_acquire(FImage* ptr) {
-    as_rc(ptr)->retain();
-}
-void fimg_release(FImage* ptr) {
-    as_rc(ptr)->release();
-}
-
-// =============================================================================
-
-FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
-    if (!ptr) return nullptr;
-
-    auto p = new FTextureConfig(as_rc(ptr));
-
-    auto fmt = filament::Texture::InternalFormat::RGB8;
-
-    switch (format) {
-    case R11F_G11F_B10F:
-        fmt = filament::Texture::InternalFormat::R11F_G11F_B10F;
-        break;
-    default: spdlog::warn("Unknown texture format {}!", (int)format);
-    }
-
-    spdlog::debug("ftex set format {}", (int)fmt);
-
-    p->builder.format(fmt);
-
-    return p;
-}
-
-void ftex_config_destroy(FTextureConfig* ptr) {
-    delete ptr;
-}
-
-FTexture* ftex_init(FSession* ptr, FTextureConfig* cfg) {
-    auto p = make_refcounted_unsafe<FTextureContent>(ptr, *cfg);
-
-    return from_rc(p);
-}
-void ftex_acquire(FTexture* ptr) {
-    as_rc(ptr)->retain();
-}
-void ftex_release(FTexture* ptr) {
-    as_rc(ptr)->release();
-}
 
 // =============================================================================
 
@@ -207,12 +155,99 @@ void fmesh_release(FMesh* ptr) {
 
 // =============================================================================
 
+static_assert(sizeof(Sampler) == sizeof(filament::backend::SamplerParams));
 
-FMaterial* fmaterial_init(FSession* session, FMaterialConfig* flags) {
+void fsamp_init(Sampler* sampler) {
+    *sampler = Sampler { .pack = 0 };
+}
+
+inline filament::backend::SamplerParams* as_sp(Sampler* ptr) {
+    return (filament::backend::SamplerParams*)ptr;
+}
+
+void fsamp_set_mag(Sampler* sampler, FMagFilter f) {
+    switch (f) {
+    case MAG_FILTER_NEAREST:
+        as_sp(sampler)->filterMag =
+            filament::backend::SamplerMagFilter::NEAREST;
+        break;
+    case MAG_FILTER_LINEAR:
+        as_sp(sampler)->filterMag = filament::backend::SamplerMagFilter::LINEAR;
+        break;
+    }
+}
+void fsamp_set_min(Sampler* sampler, FMinFilter f) {
+    switch (f) {
+    case MIN_FILTER_NEAREST:
+        as_sp(sampler)->filterMin =
+            filament::backend::SamplerMinFilter::NEAREST;
+        break;
+    case MIN_FILTER_LINEAR:
+        as_sp(sampler)->filterMin = filament::backend::SamplerMinFilter::LINEAR;
+        break;
+    case MIN_FILTER_LINEAR_MIPMAP_LINEAR:
+        as_sp(sampler)->filterMin =
+            filament::backend::SamplerMinFilter::LINEAR_MIPMAP_LINEAR;
+        break;
+    }
+}
+void fsamp_set_wrap(Sampler* sampler, FWrapMode mode, FTexAxis axis) {
+    filament::backend::SamplerWrapMode b_mode;
+
+    switch (mode) {
+    case WRAP_CLAMP:
+        b_mode = filament::backend::SamplerWrapMode::CLAMP_TO_EDGE;
+        break;
+    case WRAP_REPEAT:
+        b_mode = filament::backend::SamplerWrapMode::REPEAT;
+        break;
+    case WRAP_MIRROR_REPEAT:
+        b_mode = filament::backend::SamplerWrapMode::MIRRORED_REPEAT;
+        break;
+    default: return;
+    }
+
+    switch (axis) {
+    case AXIS_U: as_sp(sampler)->wrapS = b_mode; break;
+    case AXIS_V: as_sp(sampler)->wrapT = b_mode; break;
+    case AXIS_W: as_sp(sampler)->wrapR = b_mode; break;
+    default: break;
+    }
+}
+void fsamp_set_aniso(Sampler* sampler, uint8_t level) {
+    as_sp(sampler)->anisotropyLog2 = level;
+}
+
+FMaterialConfig* fmaterialconfig_init() {
+    auto ptr = make_refcounted_unsafe<FMaterialConfigInternal>();
+    return from_rc(ptr);
+}
+
+void fmaterialconfig_destroy(FMaterialConfig* ptr) {
+    as_rc(ptr)->release();
+}
+
+void fmc_set_option(FMaterialConfig* ptr, FMatTexOption tex, uint8_t value) {
+    as_rc(ptr)->item.set_option(tex, value);
+}
+void fmc_set_texture(FMaterialConfig* ptr,
+                     FMatTexSemantic  tex_semantic,
+                     FMatTexUVSlot    slot,
+                     FTexture*        tex,
+                     Sampler*         sampler) {
+    as_rc(ptr)->item.set_texture(tex_semantic, slot, tex, sampler);
+}
+void fmc_set_blend(FMaterialConfig* ptr, FMatBlendType blend_type) {
+    as_rc(ptr)->item.set_blend(blend_type);
+}
+
+FMaterial* fmaterial_init(FSession* session, FMaterialConfig* config) {
+    auto config_ptr = as_rc(config);
+
     auto ptr = make_refcounted_unsafe<FMaterialContent>(
         session->engine(),
-        session->new_instance_for_type(MaterialType::Lit),
-        flags->instance_count);
+        session->new_instance_for_type(config_ptr->item),
+        config_ptr->item);
 
     return from_rc(ptr);
 }
@@ -229,9 +264,19 @@ void fmaterial_set_base_color(FMaterial* ptr, FColor c) {
 void fmaterial_set_roughness_metallic(FMaterial* ptr, float r, float m) {
     as_rc(ptr)->item.set_rm(r, m);
 }
-void fmaterial_set_instances(FMaterial* ptr, mat4 const* data, u64 count) {
-    as_rc(ptr)->item.set_instances(data, count);
+void fmaterial_set_ao_factor(FMaterial* ptr, float ao) {
+    as_rc(ptr)->item.set_ao(ao);
 }
+void fmaterial_set_emissive(FMaterial* ptr, float strength, float3 factor) {
+    as_rc(ptr)->item.set_emissive(strength, factor);
+}
+void fmaterial_set_transmission(FMaterial* ptr, float tf) {
+    as_rc(ptr)->item.set_transmission(tf);
+}
+void fmaterial_set_ior(FMaterial* ptr, float ior) {
+    as_rc(ptr)->item.set_ior(ior);
+}
+void fmaterial_set_texture(FMaterial*, FMatTexSemantic, FTexture*, Sampler*);
 
 // =============================================================================
 
