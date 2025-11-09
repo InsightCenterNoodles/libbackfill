@@ -53,7 +53,10 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     // XRandr may not be available on some platforms...
     SDL_SetHint(SDL_HINT_VIDEO_X11_XRANDR, "0");
+
+#ifndef __APPLE__
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
+#endif
 
     if (config.display.size()) { 
         spdlog::debug("Creating display at {}", config.display);

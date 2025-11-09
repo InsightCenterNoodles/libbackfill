@@ -32,7 +32,6 @@
 #include <fstream>
 
 #include "config.h"
-#include "generated.h"
 #include "geometry.h"
 #include "projection.h"
 #include "renderstate.h"

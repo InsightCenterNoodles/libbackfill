@@ -399,7 +399,8 @@ int main(int argc, char** argv) {
     fmaterialconfig_destroy(mat_config);
 
     fmaterial_set_base_color(mat, { 1, 1, 1, 1 });
-    fmaterial_set_roughness_metallic(mat, .25, 1);
+    fmaterial_set_roughness_metallic(mat, .25, 0.0);
+    fmaterial_set_ior(mat, 1.5);
     fmaterial_set_transmission(mat, .9);
 
     auto sphere = make_sphere();
