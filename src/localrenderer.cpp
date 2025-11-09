@@ -2,6 +2,8 @@
 
 #include <filament/SwapChain.h>
 
+#include <unistd.h>
+
 
 LocalRenderer::LocalRenderer(LocalEngine const& le, LocalPlatform const& lp) {
     m_engine = le;

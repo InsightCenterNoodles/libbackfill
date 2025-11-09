@@ -4,6 +4,8 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cassert>
+
 
 using namespace filament::math;
 

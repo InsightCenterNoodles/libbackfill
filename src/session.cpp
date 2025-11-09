@@ -310,6 +310,7 @@ utils::Entity FSession::new_entity() {
 void FSession::delete_entity(utils::Entity e) {
     spdlog::debug("Delete entity {}", e.getId());
     del_renderable(e);
+    scene()->remove(e);
     manager().destroy(e);
     // m_bound_render_resources.erase(utils::Entity::smuggle(e));
 }

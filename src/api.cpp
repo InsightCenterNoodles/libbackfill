@@ -276,7 +276,12 @@ void fmaterial_set_transmission(FMaterial* ptr, float tf) {
 void fmaterial_set_ior(FMaterial* ptr, float ior) {
     as_rc(ptr)->item.set_ior(ior);
 }
-void fmaterial_set_texture(FMaterial*, FMatTexSemantic, FTexture*, Sampler*);
+void fmaterial_set_texture(FMaterial*      ptr,
+                           FMatTexSemantic semantic,
+                           FTexture*       tex,
+                           Sampler*        sampler) {
+    as_rc(ptr)->item.set_texture(semantic, as_rc(tex)->borrow(), *sampler);
+}
 
 // =============================================================================
 

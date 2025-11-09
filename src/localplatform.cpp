@@ -4,6 +4,8 @@
 #include <SDL3/SDL_video.h>
 #include <SDL3/SDL_hints.h>
 
+#include <cstdlib>
+
 #ifdef __APPLE__
 #    define NS_PRIVATE_IMPLEMENTATION
 #    define CA_PRIVATE_IMPLEMENTATION
@@ -51,6 +53,7 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     // XRandr may not be available on some platforms...
     SDL_SetHint(SDL_HINT_VIDEO_X11_XRANDR, "0");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11");
 
     if (config.display.size()) { 
         spdlog::debug("Creating display at {}", config.display);
@@ -65,6 +68,10 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
 
     if (config.renderer == filament::backend::Backend::VULKAN) {
         window_flags |= SDL_WINDOW_VULKAN;
+    }
+
+    if (config.renderer == filament::backend::Backend::METAL) {
+        window_flags |= SDL_WINDOW_METAL;
     }
 
     m_window_pointer = SDL_CreateWindow(

@@ -56,6 +56,8 @@ void vert_compress_common(std::span<const Vertex> src,
 
     // Well, we cant use strides in the builder yet. So, yes, we have to copy.
 
+    // TODO: Check when we can get non-zero stride support
+
     auto positions = std::vector<float3>(src.size());
     auto normals   = std::vector<float3>(src.size());
     auto uvs       = std::vector<float2>(src.size());
@@ -171,8 +173,8 @@ LocalIndexBuffer::LocalIndexBuffer(filament::Engine* engine,
 
     m_index_buffer->setBuffer(
         *engine,
-        filament::VertexBuffer::BufferDescriptor((const char*)content.data(),
-                                                 content.span().size_bytes(),
-                                                 completion,
-                                                 this));
+        filament::IndexBuffer::BufferDescriptor((const char*)content.data(),
+                                                content.span().size_bytes(),
+                                                completion,
+                                                this));
 }

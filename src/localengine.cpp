@@ -57,7 +57,16 @@ public:
         VkSurfaceKHR surface;
         VkExtent2D   extent;
 
-        SDL_Vulkan_CreateSurface(m_window, instance, nullptr, &surface);
+        bool vkok =
+            SDL_Vulkan_CreateSurface(m_window, instance, nullptr, &surface);
+
+        if (!vkok or !surface) {
+            std::string error = SDL_GetError();
+
+            spdlog::critical("Unable to create vulkan context: {}", error);
+            // There is no way we can continue
+            abort();
+        }
 
         int32_t width, height;
         SDL_GetWindowSizeInPixels(m_window, &width, &height);
