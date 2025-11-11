@@ -285,6 +285,21 @@ void fmaterial_set_texture(FMaterial*      ptr,
 
 // =============================================================================
 
+
+FImage* fimg_init_exr(FBlobRef ref) {
+    auto ptr = make_refcounted_unsafe<FImageContent>(ref);
+
+    return from_rc(ptr);
+}
+void fimg_acquire(FImage* ptr) {
+    as_rc(ptr)->retain();
+}
+void fimg_release(FImage* ptr) {
+    as_rc(ptr)->release();
+}
+
+// =============================================================================
+
 struct FLightConfig : filament::LightManager::Builder {
     using Builder::Builder;
 };
