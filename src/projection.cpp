@@ -23,13 +23,18 @@ void compute_off_axis_projection(ScreenDesc const& screen_desc,
     assert(near > 0.0f && far > near);
 
     // Camera Pose
-    const mat4f H = mat4f(head_rot) * mat4f::translation((float3)head_pos);
+    const mat4f H = mat4f::translation((float3)head_pos);
 
     // +/- IPD along camera-right (from H’s rotation columns)
     const float  ipd  = 0.064f;
-    const float  half = (left_eye ? -0.5f : +0.5f) * ipd;
+    const float  half = (left_eye ? 0.5f : -0.5f) * ipd;
     const float3 rCam =
-        normalize(float3 { H[0].x, H[0].y, H[0].z }); // camera right in world
+        normalize(
+            mat4f::project(
+                mat4f(head_rot), 
+                float3 { H[0].x, H[0].y, H[0].z }
+            )
+        ); // camera right in world
 
     const mat4f H_eye = mat4f::translation(half * rCam) * H;
     camera->setModelMatrix(H_eye);
