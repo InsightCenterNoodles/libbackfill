@@ -346,7 +346,7 @@ int main(int argc, char** argv) {
     spdlog::info("Starting up...");
 
 
-#if 1
+#if 0
     FScreenPlane plane {
         .lower_left  = { -2.5, 0, -1.768 },
         .lower_right = { 2.5, 0, -1.768 },
@@ -437,6 +437,71 @@ int main(int argc, char** argv) {
         fs_set_transform(session, entity, &transform);
     }
 
+    // ---------------------------------------------------------------------
+    // Add a large ground plane to receive shadows
+    {
+        // Simple 2-triangle quad centered at origin on Y=0
+        const FVertexPNU planeVerts[] = {
+            { { -10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+            { {  10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
+            { {  10.0f, 0.0f,  10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f } },
+            { { -10.0f, 0.0f,  10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },
+        };
+
+        const ushort3 planeIdx[] = {
+            { 0, 2, 1 },
+            { 0, 3, 2 },
+        };
+
+        FPackedVertex planePacked[4];
+        pack_vertex_u16(planeVerts,
+                        4,
+                        planeIdx,
+                        2,
+                        planePacked);
+
+        auto* planeVBlob =
+            fblob_init_copy((char const*)planePacked, sizeof(planePacked));
+        auto* planeIBlob =
+            fblob_init_copy((char const*)planeIdx, sizeof(planeIdx));
+
+        auto* planeMesh = fmesh_init(session,
+                                     fblobref_whole(planeVBlob),
+                                     4,
+                                     fblobref_whole(planeIBlob),
+                                     6,
+                                     FMeshIndexType::U16,
+                                     aabb { { -10.0f, 0.0f, -10.0f },
+                                            { 10.0f, 0.0f, 10.0f } });
+
+        // Opaque, rough material for the ground
+        auto planeMatCfg = fmaterialconfig_init();
+
+        auto* planeMat = fmaterial_init(session, planeMatCfg);
+        fmaterialconfig_destroy(planeMatCfg);
+
+        fmaterial_set_base_color(planeMat, { 0.7f, 0.7f, 0.7f, 1.0f });
+        fmaterial_set_roughness_metallic(planeMat, 1.0f, 0.0f);
+
+        auto planeEntity = fs_new_entity(session);
+        fs_add_renderable(session, planeEntity, planeMesh, planeMat);
+        // Plane is already at world Y=0; no transform needed.
+    }
+
+    // ---------------------------------------------------------------------
+    // Add a downward directional light that casts shadows
+    {
+        auto dirLight = fs_new_entity(session);
+        auto* lc      = flightconfig_init(DIRECTIONAL);
+        // Sun-like brightness in lux; tweak as needed
+        flc_set_intensity(lc, 100000.0f);
+        flc_set_color(lc, { 1.0f, 1.0f, 1.0f, 1.0f });
+        flc_set_direction(lc, { 0.0f, -1.0f, 0.0f });
+        flc_set_shadows(lc, 1);
+        fs_add_light(session, dirLight, lc);
+        flightconfig_destroy(lc);
+    }
+
     // setup_lights(session);
 
     bool debug_off_axis = !find_and_set(arguments, "-m").empty();
@@ -514,7 +579,8 @@ int main(int argc, char** argv) {
         auto duration =
             std::chrono::duration<double>(frame_time - prev_frame_time).count();
 
-        float new_head_x = std::sin(debug_head) * 2.0f - 1.0f;
+        // float new_head_x = std::sin(debug_head) * 2.0f - 1.0f;
+        float new_head_x = 1.0;
 
         float3 head_pos = { new_head_x, 1.5f, 5.0f };
         float4 head_rot = { 0.0f, 0.0f, 0.0f, 1.0f };

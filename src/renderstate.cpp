@@ -32,6 +32,8 @@ RenderState::RenderState(FConfig const& config)
     m_view = m_engine->createView();
     m_view->setViewport({ 0, 0, width, height });
 
+    m_view->setShadowingEnabled(true);
+
     m_view->setScene(m_scene);
     m_view->setCamera(m_camera);
 }
