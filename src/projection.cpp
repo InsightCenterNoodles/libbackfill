@@ -22,11 +22,11 @@ void compute_off_axis_projection(ScreenDesc const& screen_desc,
     assert(near > 0.0f && far > near);
 
     // 1) Head pose and stereo offset (world space)
-    const mat4f H = mat4f(head_rot) * mat4f::translation((float3)head_pos);
+    const mat4f H = mat4f::translation((float3)head_pos);
 
     const float  ipd  = 0.064f;
-    const float  half = (left_eye ? -0.5f : +0.5f) * ipd;
-    const float3 rCam = normalize(float3 { H[0].x, H[0].y, H[0].z });
+    const float  half = (left_eye ? 0.5f : -0.5f) * ipd;
+    const float3 rCam = mat4f::project(mat4f(head_rot),normalize(float3 { H[0].x, H[0].y, H[0].z }));
 
     const mat4f  H_eye = mat4f::translation(half * rCam) * H;
     const float3 eyeW  = float3 { H_eye[3].x, H_eye[3].y, H_eye[3].z };
