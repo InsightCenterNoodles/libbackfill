@@ -543,11 +543,19 @@ int main(int argc, char** argv) {
 
             auto ref = fblobref_whole(img_blob);
 
-            auto* image = fimg_init_exr(ref);
+            FImageFileInfo info { IMG_UNKNOWN };
+            fimg_probe(ref, &info);
+
+            auto* image = fimg_init_decode_file(ref);
 
             fblob_release(img_blob);
 
-            auto* texture_cfg = ftex_config_init(image, FMT_R11F_G11F_B10F);
+            TextureFormat desired_fmt =
+                (info.kind == IMG_EXR || info.kind == IMG_HDR)
+                    ? FMT_R11F_G11F_B10F
+                    : FMT_AUTO_SRGB_COLOR;
+
+            auto* texture_cfg = ftex_config_init(image, desired_fmt);
 
             auto* texture = ftex_init(session, texture_cfg);
 

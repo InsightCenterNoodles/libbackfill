@@ -13,8 +13,11 @@
 #include <imageio/ImageDecoder.h>
 #include <math/mat4.h>
 #include <utils/EntityManager.h>
+// stb integration for LDR decoding
+#include <stb_image.h>
 
 #include <cstring>
+
 
 extern "C" {
 
@@ -284,12 +287,144 @@ void fmaterial_set_texture(FMaterial*      ptr,
 }
 
 // =============================================================================
+// File probe and image initialization ========================================
+
+static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) {
+
+    // EXR
+    if (bytes.size() >= 4) {
+        // EXR magic: 0x762F3101 (little-endian order in file)
+        const unsigned char* u = (const unsigned char*)bytes.data();
+        uint32_t magic = (uint32_t)u[0] | ((uint32_t)u[1] << 8) |
+                         ((uint32_t)u[2] << 16) | ((uint32_t)u[3] << 24);
+        if (magic == 0x01312F76u || magic == 0x762F3101u) { return IMG_EXR; }
+    }
+
+    // PNG
+    // TODO: PNG16/24 support
+    if (bytes.size() >= 8) {
+        const unsigned char* u = (const unsigned char*)bytes.data();
+        // PNG signature
+        if (u[0] == 0x89 && u[1] == 0x50 && u[2] == 0x4E && u[3] == 0x47 &&
+            u[4] == 0x0D && u[5] == 0x0A && u[6] == 0x1A && u[7] == 0x0A) {
+            return IMG_PNG;
+        }
+    }
+
+    // JPG
+    if (bytes.size() >= 3) {
+        const unsigned char* u = (const unsigned char*)bytes.data();
+        // JPEG SOI
+        if (u[0] == 0xFF && u[1] == 0xD8 && u[2] == 0xFF) { return IMG_JPEG; }
+    }
+
+    // HDR
+    if (bytes.size() >= 10) {
+        // Radiance HDR starts with ASCII "#?RADIANCE" or "#?RGBE"
+        std::string_view head(
+            bytes.data(), bytes.data() + std::min<size_t>(bytes.size(), 10));
+        if (head.rfind("#?RADIANCE", 0) == 0 || head.rfind("#?RGBE", 0) == 0) {
+            return IMG_HDR;
+        }
+    }
+    return IMG_UNKNOWN;
+}
+
+uint8_t fimg_probe(FBlobRef ref, FImageFileInfo* out) {
+    auto b = ref_to_bytes(ref);
+    if (!b) return 0;
+    auto kind = probe_kind_from_magic(b.span());
+    if (out) out->kind = kind;
+    return kind != IMG_UNKNOWN;
+}
+
+FImage* fimg_init_raw(FBlobRef ref, FImageRawDesc const* desc) {
+    if (!desc) return nullptr;
+    auto b = ref_to_bytes(ref);
+    if (!b) return nullptr;
+
+    // Validate byte size
+    size_t expected = (size_t)desc->width * (size_t)desc->height *
+                      (size_t)desc->n_channels *
+                      (desc->type == PIXEL_UBYTE ? 1 : sizeof(float));
+
+    if (b.size() < expected) {
+        spdlog::error("Raw pixel blob too small: {} < {}", b.size(), expected);
+        return nullptr;
+    }
+
+    // Looks good...
+
+    auto ptr =
+        make_refcounted_unsafe<FImageContent>(*desc, b.subspan(0, expected));
+    return from_rc(ptr);
+}
 
 
-FImage* fimg_init_exr(FBlobRef ref) {
+inline FImage* use_float_decoder(FBlobRef ref) {
     auto ptr = make_refcounted_unsafe<FImageContent>(ref);
+    return from_rc(ptr);
+}
+
+FImage* use_ldr_decoder(FBlobRef ref) {
+    // must be valid, otherwise we couldn't get to this function
+    auto b = ref_to_bytes(ref);
+
+    int x    = 0;
+    int y    = 0;
+    int comp = 0;
+
+    if (!stbi_info_from_memory(
+            (const stbi_uc*)b.data(), (int)b.size(), &x, &y, &comp)) {
+        spdlog::warn("stb info failed; falling back to float decoder");
+        return use_float_decoder(ref);
+    }
+
+    int out_comp = comp;
+
+    // Decode pixels to memory
+
+    auto decoded_pixel_ptr = stbi_load_from_memory(
+        (const stbi_uc*)b.data(), (int)b.size(), &x, &y, &out_comp, comp);
+
+    if (!decoded_pixel_ptr or out_comp != comp) {
+        spdlog::warn("stb decode failed; falling back to float decoder");
+
+        return use_float_decoder(ref);
+    }
+
+    // Move those pixels around...
+
+    size_t nbytes = (size_t)x * (size_t)y * (size_t)comp;
+
+    auto pixels = Bytes::take_ownership(
+        (char const*)decoded_pixel_ptr, nbytes, stbi_image_free);
+
+
+    FImageRawDesc d {
+        (uint32_t)x, (uint32_t)y, (uint8_t)comp, PIXEL_UBYTE, CS_SRGB
+    };
+
+    auto ptr = make_refcounted_unsafe<FImageContent>(d, pixels);
 
     return from_rc(ptr);
+}
+
+FImage* fimg_init_decode_file(FBlobRef ref) {
+    auto b = ref_to_bytes(ref);
+    if (!b) return nullptr;
+
+    FImageFileKind kind = probe_kind_from_magic(b.span());
+
+    switch (kind) {
+    case IMG_EXR:
+    case IMG_HDR:
+        // Use Filament's float decoder for HDR
+        return use_float_decoder(ref);
+    case IMG_PNG:
+    case IMG_JPEG: return use_ldr_decoder(ref);
+    default: return use_float_decoder(ref);
+    }
 }
 void fimg_acquire(FImage* ptr) {
     as_rc(ptr)->retain();

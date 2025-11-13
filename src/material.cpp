@@ -6,11 +6,15 @@
 
 #include "session.h"
 
+#include <algorithm>
+#include <cmath>
 #include <magic_enum/magic_enum.hpp>
 
 
 // =============================================================================
 
+/// An in-memory stream class. Useful for filament APIs that want file streams,
+/// but we can point them to memory instead
 struct membuf : std::basic_streambuf<char> {
     membuf(const char* data, std::size_t size) {
         // Do NOT allow writes; keep it read-only.
@@ -65,19 +69,39 @@ FImageContent::FImageContent(FBlobRef ref) {
         .width      = w,
         .height     = h,
         .n_channels = n,
-        .size       = w * h * n * sizeof(float),
+        .size       = (size_t)w * (size_t)h * (size_t)n * sizeof(float),
     };
+    m_type       = PIXEL_FLOAT32;
+    m_colorspace = CS_LINEAR;
 
     spdlog::info("Found image {} {} {} {} bytes", w, h, n, m_description.size);
 
     // documentation says image data under the hood is refcounted??
-    m_pending = std::make_unique<image::LinearImage>(lin_image);
+    m_linear = std::make_unique<image::LinearImage>(lin_image);
 
-    auto* ptr = m_pending->getPixelRef();
+    auto* ptr = m_linear->getPixelRef();
 
     spdlog::debug("Data {} {} {} {}", ptr[0], ptr[1], ptr[2], ptr[3]);
 
     spdlog::debug("Creating image {} from blob {}", (void*)this, (void*)ref.id);
+}
+
+FImageContent::FImageContent(FImageRawDesc const& desc, Bytes pixels) {
+    expect(desc.n_channels >= 1 && desc.n_channels <= 4,
+           "Unsupported channel count");
+
+    m_description = {
+        .width      = desc.width,
+        .height     = desc.height,
+        .n_channels = desc.n_channels,
+        .size       = (size_t)desc.width * (size_t)desc.height *
+                (size_t)desc.n_channels *
+                (desc.type == PIXEL_UBYTE ? 1 : sizeof(float)),
+    };
+
+    m_type       = desc.type;
+    m_colorspace = desc.colorspace;
+    m_raw        = pixels;
 }
 
 FImageContent::~FImageContent() {
@@ -99,24 +123,115 @@ FTextureConfig::FTextureConfig(RefCounted<FImageContent>* ptr)
 
 
 void FTextureContent::completion(void* buffer, size_t, void* user) {
-    ((FTextureContent*)user)->m_image = {};
+    auto* ptr    = ((FTextureContent*)user);
+    ptr->m_image = {};
+    ptr->m_staging_bytes.clear();
+    ptr->m_staging_bytes.shrink_to_fit();
+    ptr->texture()->generateMipmaps(*ptr->m_engine);
+}
+
+static inline uint8_t to_unorm8(float v) {
+    float x = std::clamp(v, 0.0f, 1.0f);
+    return static_cast<uint8_t>(std::lroundf(x * 255.0f));
+}
+
+static inline uint8_t to_srgb8(float linear) {
+    float x    = std::clamp(linear, 0.0f, 1.0f);
+    float srgb = x <= 0.0031308f ? x * 12.92f
+                                 : 1.055f * std::pow(x, 1.0f / 2.4f) - 0.055f;
+    return static_cast<uint8_t>(
+        std::lroundf(std::clamp(srgb, 0.0f, 1.0f) * 255.0f));
 }
 
 FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
     : m_image(config.image), m_engine(session->engine()) {
     m_texture = config.builder.build(*m_engine);
 
-    auto const& desc = m_image->description();
+    auto const& desc   = m_image->description();
+    auto const  width  = static_cast<size_t>(desc.width);
+    auto const  height = static_cast<size_t>(desc.height);
+    auto const  ch     = static_cast<size_t>(desc.n_channels);
 
-    // Transfer to GPU. The PBD only references the data, thus it must stay
-    // alive, while uploading. There is an internal gpu buffer id it holds.
-    auto buffer =
-        filament::Texture::PixelBufferDescriptor(m_image->image().getPixelRef(),
-                                                 desc.size,
-                                                 filament::Texture::Format::RGB,
-                                                 filament::Texture::Type::FLOAT,
-                                                 completion,
-                                                 this);
+    auto pixel_format = filament::Texture::Format::RGB;
+    switch (desc.n_channels) {
+    case 1: pixel_format = filament::Texture::Format::R; break;
+    case 2: pixel_format = filament::Texture::Format::RG; break;
+    case 3: pixel_format = filament::Texture::Format::RGB; break;
+    case 4: pixel_format = filament::Texture::Format::RGBA; break;
+    default: break;
+    }
+
+    // Desired upload type inferred from internal format request
+    bool desire_u8   = false;
+    bool desire_srgb = false;
+
+    switch (config.requested_format) {
+    case FMT_SRGB8:
+    case FMT_SRGB8_A8:
+    case FMT_AUTO_SRGB_COLOR:
+        desire_u8   = true;
+        desire_srgb = true;
+        break;
+    case FMT_R8:
+    case FMT_RG8:
+    case FMT_RGB8:
+    case FMT_RGBA8:
+    case FMT_AUTO_LINEAR_DATA:
+        desire_u8   = true;
+        desire_srgb = false;
+        break;
+    default: desire_u8 = false; break; // float formats
+    }
+
+    filament::Texture::Type pixel_type = filament::Texture::Type::FLOAT;
+    const void*             data_ptr   = nullptr;
+    size_t                  byte_size  = desc.size;
+
+    if (m_image->has_linear()) {
+        // Source is float32 linear
+        if (desire_u8) {
+            // Fallback convert float->8bit (linear or sRGB)
+            m_staging_bytes.resize(width * height * ch);
+            const float* src = m_image->image_linear().getPixelRef();
+            uint8_t*     dst = m_staging_bytes.data();
+            if (desire_srgb) {
+                for (size_t i = 0, n = width * height; i < n; ++i) {
+                    for (size_t c = 0; c < ch; ++c) {
+                        dst[i * ch + c] = to_srgb8(src[i * ch + c]);
+                    }
+                }
+            } else {
+                for (size_t i = 0, n = width * height; i < n; ++i) {
+                    for (size_t c = 0; c < ch; ++c) {
+                        dst[i * ch + c] = to_unorm8(src[i * ch + c]);
+                    }
+                }
+            }
+            pixel_type = filament::Texture::Type::UBYTE;
+            data_ptr   = m_staging_bytes.data();
+            byte_size  = m_staging_bytes.size();
+        } else {
+            // float-in, float-out
+            data_ptr   = m_image->image_linear().getPixelRef();
+            pixel_type = filament::Texture::Type::FLOAT;
+        }
+    } else {
+        // Source is raw bytes
+        if (desire_u8 || m_image->pixel_type() == PIXEL_UBYTE) {
+            data_ptr   = m_image->image_raw().data();
+            pixel_type = filament::Texture::Type::UBYTE;
+            byte_size  = m_image->description().size;
+        } else {
+            // Raw FLOAT32 upload
+            data_ptr   = m_image->image_raw().data();
+            pixel_type = filament::Texture::Type::FLOAT;
+            byte_size  = m_image->description().size;
+        }
+    }
+
+    // Transfer to GPU
+    auto buffer = filament::Texture::PixelBufferDescriptor(
+        data_ptr, byte_size, pixel_format, pixel_type, completion, this);
 
     m_texture->setImage(*m_engine, 0, std::move(buffer));
 
@@ -139,9 +254,42 @@ FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
 
     auto fmt = filament::Texture::InternalFormat::RGB8;
 
+    // channel count is used by auto selectors
+    auto const& desc = p->image->description();
+    auto const  ch   = (int)desc.n_channels;
+
     switch (format) {
+    case FMT_R8: fmt = filament::Texture::InternalFormat::R8; break;
+    case FMT_RG8: fmt = filament::Texture::InternalFormat::RG8; break;
+    case FMT_RGB8: fmt = filament::Texture::InternalFormat::RGB8; break;
+    case FMT_RGBA8: fmt = filament::Texture::InternalFormat::RGBA8; break;
+
+    case FMT_SRGB8: fmt = filament::Texture::InternalFormat::SRGB8; break;
+    case FMT_SRGB8_A8: fmt = filament::Texture::InternalFormat::SRGB8_A8; break;
+
+    case FMT_R16F: fmt = filament::Texture::InternalFormat::R16F; break;
+    case FMT_RG16F: fmt = filament::Texture::InternalFormat::RG16F; break;
+    case FMT_RGB16F: fmt = filament::Texture::InternalFormat::RGB16F; break;
+    case FMT_RGBA16F: fmt = filament::Texture::InternalFormat::RGBA16F; break;
+
+    case FMT_RGB32F: fmt = filament::Texture::InternalFormat::RGB32F; break;
+    case FMT_RGBA32F: fmt = filament::Texture::InternalFormat::RGBA32F; break;
+
     case FMT_R11F_G11F_B10F:
         fmt = filament::Texture::InternalFormat::R11F_G11F_B10F;
+        break;
+    case FMT_AUTO_SRGB_COLOR:
+        fmt = (ch == 4) ? filament::Texture::InternalFormat::SRGB8_A8
+                        : filament::Texture::InternalFormat::SRGB8;
+        break;
+    case FMT_AUTO_LINEAR_DATA:
+        if (ch == 1) fmt = filament::Texture::InternalFormat::R8;
+        else if (ch == 2)
+            fmt = filament::Texture::InternalFormat::RG8;
+        else if (ch == 4)
+            fmt = filament::Texture::InternalFormat::RGBA8;
+        else
+            fmt = filament::Texture::InternalFormat::RGB8;
         break;
     default: spdlog::warn("Unknown texture format {}!", (int)format);
     }
@@ -149,6 +297,7 @@ FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
     spdlog::debug("ftex set format {}", (int)fmt);
 
     p->builder.format(fmt);
+    p->requested_format = format;
 
     return p;
 }
@@ -188,7 +337,7 @@ void FMaterialConfigInternal::set_texture(FMatTexSemantic semantic,
                                           Sampler*        sampler) {
     auto texture = as_rc(tex);
 
-    linked_textures.at(semantic) = texture->borrow();
+    linked_textures.at(semantic)         = texture->borrow();
     linked_texture_samplers.at(semantic) = *sampler;
 
     switch (semantic) {
@@ -252,7 +401,7 @@ FMaterialContent::FMaterialContent(filament::Engine*              engine,
     spdlog::debug("new material: {}", (void*)m_instance);
 
     for (auto i : magic_enum::enum_values<FMatTexSemantic>()) {
-        auto const& tex = config.linked_textures[(int)i];
+        auto const& tex  = config.linked_textures[(int)i];
         auto const& samp = config.linked_texture_samplers[(int)i];
         if (tex) { set_texture(i, tex, samp); }
     }
@@ -312,7 +461,7 @@ inline const char* map_semantic_to_param(FMatTexSemantic semantic) {
 void FMaterialContent::set_texture(FMatTexSemantic               semantic,
                                    Owned<FTextureContent> const& content,
                                    Sampler                       sampler) {
-    m_linked_textures[semantic] = content;
+    m_linked_textures[semantic]         = content;
     m_linked_texture_samplers[semantic] = sampler;
 
     auto b_sampler =

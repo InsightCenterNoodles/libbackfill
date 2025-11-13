@@ -80,10 +80,11 @@ set(BACKFILL_SOURCES
     src/renderstate.h   src/renderstate.cpp
     src/session.h       src/session.cpp
     src/api.cpp
+    src/material.h src/material.cpp
+    src/stb_impl.cpp
 )
 
-add_library(backfill SHARED ${BACKFILL_SOURCES}
-    src/material.h src/material.cpp)
+add_library(backfill SHARED ${BACKFILL_SOURCES})
 
 set_target_properties(backfill PROPERTIES CXX_STANDARD 20)
 
@@ -142,6 +143,7 @@ target_link_libraries(backfill
         gltfio
         SDL3-static
         magic_enum
+        stb
         spdlog::spdlog_header_only
 )
 
@@ -237,4 +239,3 @@ configure_file(
 
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/backfill.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
-

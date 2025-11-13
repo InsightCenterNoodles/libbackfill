@@ -7,6 +7,8 @@
 #endif
 
 /// This API is SINGLE THREADED
+/// All types with a release_ use reference counting. You MUST release after an
+/// init. Init will create a pointer to an object with an RC of 1.
 
 #ifdef __cplusplus
 extern "C" {
@@ -97,7 +99,7 @@ typedef struct FBlob     FBlob;
 typedef struct FMesh     FMesh;
 typedef struct FMaterial FMaterial;
 
-// =============================================================================
+// Vertex Utilities ============================================================
 
 void pack_vertex_u16(FVertexPNU const* source,
                      uint32_t          vertex_count,
@@ -111,12 +113,9 @@ void pack_vertex_u32(FVertexPNU const* source,
                      uint32_t          index_count,
                      FPackedVertex*    dest);
 
-// =============================================================================
-
-/// All types with a release_ use reference counting. You MUST release after an
-/// init. Init will create a pointer to an object with an RC of 1.
-
-// =============================================================================
+// FBlobs ======================================================================
+// These are binary blobs of data, refcounted. These allow us to do async
+// uploads, and to refer to sub regions.
 
 FBlob* fblob_init_copy(char const* data, u64 byte_count);
 void   fblob_acquire(FBlob*);
@@ -130,23 +129,101 @@ typedef struct FBlobRef {
 
 FBlobRef fblobref_whole(FBlob*);
 
-// =============================================================================
+// Images ======================================================================
+// Represents the raw bytes needed for texturing
 
 typedef struct FImage FImage;
 
-FImage* fimg_init_exr(FBlobRef);
-void    fimg_acquire(FImage*);
-void    fimg_release(FImage*);
+/// Decode a blob of bytes as an image file
+FImage* fimg_init_decode_file(FBlobRef);
 
-// =============================================================================
+
+/// The type of pixels in an image
+typedef enum FPixelType {
+    PIXEL_UBYTE   = 0,
+    PIXEL_FLOAT32 = 1,
+} FPixelType;
+
+/// The color space of an image
+typedef enum FColorSpace {
+    CS_LINEAR = 0,
+    CS_SRGB   = 1,
+} FColorSpace;
+
+/// A description of an image, for raw byte annotation.
+typedef struct FImageRawDesc {
+    uint32_t    width;
+    uint32_t    height;
+    uint8_t     n_channels; // 1..4 supported
+    FPixelType  type;       // UBYTE or FLOAT32
+    FColorSpace colorspace; // hint for choosing internal format and sampling
+} FImageRawDesc;
+
+/// Initialize an image from raw pixel memory referenced by the blob.
+/// The blob region must contain exactly width*height*channels*bytes_per_pixel
+/// bytes.
+FImage* fimg_init_raw(FBlobRef, FImageRawDesc const*);
+
+/// Lightweight file probe to choose decoding path
+typedef enum FImageFileKind {
+    IMG_UNKNOWN = 0,
+    IMG_EXR,
+    IMG_HDR, // Radiance HDR
+    IMG_PNG,
+    IMG_JPEG,
+} FImageFileKind;
+
+typedef struct FImageFileInfo {
+    FImageFileKind kind;
+} FImageFileInfo;
+
+/// Inspect magic bytes to classify file kind. Returns 1 if recognized.
+uint8_t fimg_probe(FBlobRef, FImageFileInfo* out);
+
+void fimg_acquire(FImage*);
+void fimg_release(FImage*);
+
+// Textures ====================================================================
 
 typedef struct FTexture       FTexture;
 typedef struct FTextureConfig FTextureConfig;
 
+/// The format of a texture
 typedef enum TextureFormat {
+    // 8-bit UNorm (linear)
+    FMT_R8,
+    FMT_RG8,
     FMT_RGB8,
     FMT_RGBA8,
+
+    // 8-bit sRGB
+    FMT_SRGB8,
+    FMT_SRGB8_A8,
+
+    // 16-bit float (linear)
+    FMT_R16F,
+    FMT_RG16F,
+    FMT_RGB16F,
+    FMT_RGBA16F,
+
+    // 32-bit float (linear)
+    FMT_RGB32F,
+    FMT_RGBA32F,
+
+    // Packed float
     FMT_R11F_G11F_B10F,
+
+    // Convenience selectors that choose based on channel count
+    // AUTO_SRGB_COLOR:
+    //   3->SRGB8,
+    //   4->SRGB8_A8 (intended for baseColor/emissive)
+    // AUTO_LINEAR_DATA:
+    //   1->R8,
+    //   2->RG8,
+    //   3->RGB8,
+    //   4->RGBA8 (for normals/ORM/etc)
+    FMT_AUTO_SRGB_COLOR,
+    FMT_AUTO_LINEAR_DATA,
 } TextureFormat;
 
 FTextureConfig* ftex_config_init(FImage*, TextureFormat);
@@ -157,7 +234,7 @@ void      ftex_acquire(FTexture*);
 void      ftex_release(FTexture*);
 
 
-// =============================================================================
+// Environment Light ===========================================================
 
 typedef struct FEnvironmentLight FEnvironmentLight;
 
@@ -165,7 +242,7 @@ FEnvironmentLight* fenv_light_init_equirect(FSession*, FTexture*);
 void               fenv_light_acquire(FEnvironmentLight*);
 void               fenv_light_release(FEnvironmentLight*);
 
-// =============================================================================
+// Mesh ========================================================================
 
 typedef enum FMeshIndexType { U16, U32 } FMeshIndexType;
 
@@ -180,9 +257,9 @@ FMesh* fmesh_init(FSession*,
 void fmesh_acquire(FMesh*);
 void fmesh_release(FMesh*);
 
-// =============================================================================
+// Materials ===================================================================
 
-typedef enum FMatTexOption {
+typedef enum FMatOption {
     DOUBLE_SIDED,
     UNLIT,
     CLEARCOAT,
@@ -269,7 +346,7 @@ void fmaterial_set_transmission(FMaterial*, float tf);
 void fmaterial_set_ior(FMaterial*, float ior);
 void fmaterial_set_texture(FMaterial*, FMatTexSemantic, FTexture*, Sampler*);
 
-// =============================================================================
+// Lights ======================================================================
 
 typedef struct FLightConfig FLightConfig;
 
@@ -286,7 +363,7 @@ void flc_set_spot_cone(FLightConfig*, float inner, float outer);
 void flc_set_shadows(FLightConfig*, uint8_t);
 
 
-// =============================================================================
+// Session Configuration =======================================================
 
 FConfig* fconfig_init();
 void     fconfig_destroy(FConfig*);
@@ -311,8 +388,9 @@ typedef enum FEye { EYE_LEFT, EYE_RIGHT } FEye;
 /// Set off-axis eye
 void fconfig_set_stereo_eye(FConfig*, FEye);
 
-// =============================================================================
+// Session =====================================================================
 
+/// Create a new backfill session
 FSession* fs_init(FConfig*);
 void      fs_destroy(FSession*);
 
@@ -328,17 +406,16 @@ void fs_update_head(FSession*, float3 pos, float4 quat);
 uint8_t fs_frame(FSession*);
 
 /// Create a new, blank, entity
-i32 fs_new_entity(FSession*);
-
-void fs_destroy_entity(FSession*, i32);
+i32  fs_new_entity(FSession*);
+void fs_destroy_entity(FSession*, i32 entity);
 
 /// Add a renderable component to an entity. You may delete the mesh and
 /// material after this call.
-void fs_add_renderable(FSession*, i32, FMesh*, FMaterial*);
-void fs_del_renderable(FSession*, i32);
+void fs_add_renderable(FSession*, i32 entity, FMesh*, FMaterial*);
+void fs_del_renderable(FSession*, i32 entity);
 
 /// Set the transform of an entity
-void fs_set_transform(FSession*, i32, mat4 const*);
+void fs_set_transform(FSession*, i32 entity, mat4 const*);
 
 /// Sets the parent, and CLEARS/overwrites the childs current transform if there
 /// is one.
@@ -350,8 +427,8 @@ void fs_debug_camera_obj(FSession*, char const* file);
 
 /// Add a light component to an entity. You may destroy or reuse the
 /// configuration after this call.
-void fs_add_light(FSession*, i32, FLightConfig*);
-void fs_del_light(FSession*, i32);
+void fs_add_light(FSession*, i32 entity, FLightConfig*);
+void fs_del_light(FSession*, i32 entity);
 
 // =============================================================================
 

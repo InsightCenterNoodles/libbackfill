@@ -7,6 +7,7 @@
 #include "backfill/api.h"
 #include "utility.h"
 
+#include <vector>
 
 namespace image {
 class LinearImage;
@@ -21,23 +22,31 @@ struct ImageDescription {
 
 class FImageContent {
 
-    std::unique_ptr<image::LinearImage> m_pending;
+    std::unique_ptr<image::LinearImage> m_linear; // float32 path
+    Bytes                               m_raw;    // raw pixel bytes
 
     ImageDescription m_description;
-
-    // filament::Texture::PixelBufferDescriptor m_buffer;
-
-    // static void completion(void* buffer, size_t size, void* user);
+    FPixelType       m_type       = PIXEL_FLOAT32;
+    FColorSpace      m_colorspace = CS_LINEAR;
 
 public:
     DISABLE_MOVE_COPY(FImageContent);
 
+    // Decode from an encoded file (EXR, PNG, JPG). Uses Filament's ImageDecoder
+    // for HDR/EXR, may use another path for LDR.
     FImageContent(FBlobRef);
+    // Create from user-provided raw pixels.
+    FImageContent(FImageRawDesc const&, Bytes);
     ~FImageContent();
 
     auto const& description() const { return m_description; }
+    FPixelType  pixel_type() const { return m_type; }
+    FColorSpace colorspace() const { return m_colorspace; }
 
-    image::LinearImage const& image() const { return *m_pending; }
+    // Accessors depending on storage kind
+    bool                      has_linear() const { return (bool)m_linear; }
+    image::LinearImage const& image_linear() const { return *m_linear; }
+    Bytes const&              image_raw() const { return m_raw; }
 };
 
 C_BRIDGE(FImage, RefCounted<FImageContent>);
@@ -50,6 +59,9 @@ struct FTextureConfig {
 
     filament::Texture::Builder builder;
 
+    // The requested high-level format from the API
+    TextureFormat requested_format = FMT_RGB8;
+
     FTextureConfig(RefCounted<FImageContent>*);
 };
 
@@ -58,6 +70,9 @@ class FTextureContent {
 
     filament::Engine*  m_engine;
     filament::Texture* m_texture;
+
+    // Staging buffer for 8-bit uploads (linear or sRGB)
+    std::vector<uint8_t> m_staging_bytes;
 
     static void completion(void* buffer, size_t size, void* user);
 

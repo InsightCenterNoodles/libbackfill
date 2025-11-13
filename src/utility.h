@@ -86,11 +86,11 @@ template <class T>
 class ReinterpArray;
 
 class Bytes {
-    std::shared_ptr<const char[]> m_data;
+    std::shared_ptr<const char>   m_data;
     const char*                   m_start_ptr = nullptr;
     size_t                        m_size      = 0;
 
-    Bytes(std::shared_ptr<const char[]> d, size_t start, size_t len) noexcept
+    Bytes(std::shared_ptr<const char> d, size_t start, size_t len) noexcept
         : m_data(std::move(d)),
           m_start_ptr(m_data ? m_data.get() + start : nullptr),
           m_size(len) { }
@@ -100,12 +100,27 @@ public:
 
     Bytes() = default;
 
+    /// Take ownership of the pointer
+    static Bytes take_ownership(const char*                ptr,
+                                size_t                     size,
+                                std::function<void(void*)> deleter) {
+        auto data_ptr = std::shared_ptr<const char>(
+            ptr, [=](const char* ptr) { deleter((void*)ptr); });
+
+        return Bytes(std::move(data_ptr), 0, size);
+    }
+
     static Bytes from_copy(std::span<const char> source) noexcept {
         // allocate mutable, fill, then cast to const for storage
-        auto mut = std::make_shared<char[]>(source.size());
+        // we are using a non-standard use of array shared ptr here to
+        // support any kind of pointer (such as above)
+
+        char* ptr = new char[source.size()];
+
+        auto mut =
+            std::shared_ptr<char>(ptr, [=](const char* ptr) { delete[] ptr; });
         std::memcpy((void*)mut.get(), source.data(), source.size());
-        auto imm = std::static_pointer_cast<const char[]>(mut);
-        return Bytes(std::move(imm), 0, source.size());
+        return Bytes(std::move(mut), 0, source.size());
     }
 
     [[nodiscard]]
@@ -125,7 +140,7 @@ public:
 
     const char* data() const noexcept { return m_start_ptr; }
 
-    std::shared_ptr<const char[]> const& shared_data() const noexcept {
+    std::shared_ptr<const char> const& shared_data() const noexcept {
         return m_data;
     }
 
@@ -138,20 +153,18 @@ public:
 
 template <class T>
 class ReinterpArray {
-    std::shared_ptr<const char[]> m_data;
+    Bytes                         m_data;
     const T*                      m_start_ptr = nullptr;
     size_t                        m_size      = 0; // number of T elements
 
-    ReinterpArray(std::shared_ptr<const char[]> d,
-                  const T*                      s,
-                  size_t                        count) noexcept
+    ReinterpArray(Bytes d, const T* s, size_t count) noexcept
         : m_data(std::move(d)), m_start_ptr(s), m_size(count) { }
 
 public:
     DEFAULT_MOVE_COPY(ReinterpArray);
 
     static ReinterpArray
-    from_bytes(const Bytes& source, size_t offset, size_t len) noexcept {
+    from_bytes(Bytes const& source, size_t offset, size_t len) noexcept {
         if (!source.shared_data()) return {};
 
         // Clamp to available bytes starting at offset
