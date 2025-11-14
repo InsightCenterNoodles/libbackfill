@@ -5,6 +5,8 @@
 #include "session.h"
 #include "utility.h"
 
+#include "magic_enum/magic_enum.hpp"
+
 #include <filament/LightManager.h>
 #include <filament/MaterialInstance.h>
 #include <filament/Texture.h>
@@ -367,6 +369,7 @@ inline FImage* use_float_decoder(FBlobRef ref) {
 }
 
 FImage* use_ldr_decoder(FBlobRef ref) {
+    spdlog::debug("Using LDR decoder");
     // must be valid, otherwise we couldn't get to this function
     auto b = ref_to_bytes(ref);
 
@@ -379,6 +382,8 @@ FImage* use_ldr_decoder(FBlobRef ref) {
         spdlog::warn("stb info failed; falling back to float decoder");
         return use_float_decoder(ref);
     }
+
+    spdlog::debug("Image probe finds {} {} {}", x, y, comp);
 
     int out_comp = comp;
 
@@ -412,14 +417,23 @@ FImage* use_ldr_decoder(FBlobRef ref) {
 
 FImage* fimg_init_decode_file(FBlobRef ref) {
     auto b = ref_to_bytes(ref);
+
+    spdlog::debug("Reading file from blob {} ({} + {})",
+                  (void*)ref.id,
+                  ref.start,
+                  ref.length);
+
     if (!b) return nullptr;
 
     FImageFileKind kind = probe_kind_from_magic(b.span());
+
+    spdlog::debug("Image is kind {}", magic_enum::enum_name(kind));
 
     switch (kind) {
     case IMG_EXR:
     case IMG_HDR:
         // Use Filament's float decoder for HDR
+        // Color space request will be ignored; these wont be SRGB
         return use_float_decoder(ref);
     case IMG_PNG:
     case IMG_JPEG: return use_ldr_decoder(ref);

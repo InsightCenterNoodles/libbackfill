@@ -134,10 +134,6 @@ FBlobRef fblobref_whole(FBlob*);
 
 typedef struct FImage FImage;
 
-/// Decode a blob of bytes as an image file
-FImage* fimg_init_decode_file(FBlobRef);
-
-
 /// The type of pixels in an image
 typedef enum FPixelType {
     PIXEL_UBYTE   = 0,
@@ -158,6 +154,10 @@ typedef struct FImageRawDesc {
     FPixelType  type;       // UBYTE or FLOAT32
     FColorSpace colorspace; // hint for choosing internal format and sampling
 } FImageRawDesc;
+
+
+/// Decode a blob of bytes as an image file
+FImage* fimg_init_decode_file(FBlobRef);
 
 /// Initialize an image from raw pixel memory referenced by the blob.
 /// The blob region must contain exactly width*height*channels*bytes_per_pixel
@@ -189,7 +189,7 @@ typedef struct FTexture       FTexture;
 typedef struct FTextureConfig FTextureConfig;
 
 /// The format of a texture
-typedef enum TextureFormat {
+typedef enum FTextureFormat {
     // 8-bit UNorm (linear)
     FMT_R8,
     FMT_RG8,
@@ -224,9 +224,9 @@ typedef enum TextureFormat {
     //   4->RGBA8 (for normals/ORM/etc)
     FMT_AUTO_SRGB_COLOR,
     FMT_AUTO_LINEAR_DATA,
-} TextureFormat;
+} FTextureFormat;
 
-FTextureConfig* ftex_config_init(FImage*, TextureFormat);
+FTextureConfig* ftex_config_init(FImage*, FTextureFormat);
 void            ftex_config_destroy(FTextureConfig*);
 
 FTexture* ftex_init(FSession*, FTextureConfig*);
@@ -272,7 +272,7 @@ typedef enum FMatTexSemantic {
     NORMAL_TEX,
     OCCLUSION_TEX,
     EMISSIVE_TEX,
-    MAT_ROUGH_TEX,
+    METAL_ROUGH_TEX,
     CLEARCOAT_TEX,
     CLEARCOAT_ROUGH_TEX,
     CLEARCOAT_NORMAL_TEX,
@@ -322,16 +322,27 @@ void fsamp_set_min(Sampler*, FMinFilter);
 void fsamp_set_wrap(Sampler*, FWrapMode, FTexAxis);
 void fsamp_set_aniso(Sampler*, uint8_t);
 
-
+/// Create a material configuration. Material configs are used to specialize
+/// material capabilities
 FMaterialConfig* fmaterialconfig_init();
 void             fmaterialconfig_destroy(FMaterialConfig*);
 
+/// Set an option on a material.
+/// NOTE: Attempting to set options parameters (like transmission) on a material
+/// that is not enabled in the config will result in an error
 void fmc_set_option(FMaterialConfig*, FMatTexOption, uint8_t);
+
+/// Set, and enable, the use of a texture for a given semantic.
+/// NOTE: Attempting to set a texture for a semantic on a constructed material
+/// that does not have that semantic enabled is a hard error.
 void fmc_set_texture(FMaterialConfig*,
                      FMatTexSemantic,
                      FMatTexUVSlot,
                      FTexture*,
                      Sampler*);
+
+/// Enable, but do not set, the use of a texture semantic.
+void fmc_enable_texture(FMaterialConfig*, FMatTexSemantic, FMatTexUVSlot);
 void fmc_set_blend(FMaterialConfig*, FMatBlendType);
 
 FMaterial* fmaterial_init(FSession*, FMaterialConfig*);

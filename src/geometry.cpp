@@ -87,13 +87,19 @@ void vert_compress_common(std::span<const Vertex> src,
 
     delete so;
 
+    // spdlog::debug("HERE");
+
     for (size_t i = 0; i < vertex_count; ++i) {
         out[i].position = src[i].position;
-        out[i].texture  = src[i].texture;
+        // pack texture to USHORT2
+        out[i].texture = { packUnorm16(src[i].texture[0]),
+                           packUnorm16(src[i].texture[1]) };
         // pack quaternion to SHORT4 (snorm16)
         const float4 q =
             float4 { quats[i].x, quats[i].y, quats[i].z, quats[i].w };
         out[i].surface = packSnorm16(q);
+
+        // spdlog::debug("TEX {} {}", out[i].texture[0], out[i].texture[1]);
     }
 }
 

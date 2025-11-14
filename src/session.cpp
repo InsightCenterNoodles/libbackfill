@@ -216,9 +216,15 @@ FSession::new_instance_for_type(FMaterialConfigInternal const& internal) {
 
     auto key = internal.material_key;
 
-    filament::gltfio::UvMap map;
+    filament::gltfio::UvMap map {};
 
-    return m_provider->createMaterialInstance(&key, &map);
+    auto* ret = m_provider->createMaterialInstance(&key, &map);
+
+    // the key could be mutated. check.
+    spdlog::debug("Realized mat key:");
+    __builtin_dump_struct(&key, &printf);
+
+    return ret;
 }
 
 utils::Entity FSession::new_entity() {

@@ -60,7 +60,7 @@ struct FTextureConfig {
     filament::Texture::Builder builder;
 
     // The requested high-level format from the API
-    TextureFormat requested_format = FMT_RGB8;
+    FTextureFormat requested_format = FMT_RGB8;
 
     FTextureConfig(RefCounted<FImageContent>*);
 };

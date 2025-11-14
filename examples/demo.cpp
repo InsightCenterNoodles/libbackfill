@@ -11,6 +11,7 @@
 
 #include <backfill/api.h>
 
+
 template <>
 struct fmt::formatter<float4> {
     constexpr auto parse(format_parse_context& ctx) -> decltype(ctx.begin()) {
@@ -220,6 +221,12 @@ float3 normalize(float3 v) {
     return { v.x / norm, v.y / norm, v.z / norm };
 }
 
+static void _die(std::string_view message, int line) {
+    spdlog::critical("Error @ {}: {}", line, message);
+}
+
+#define DIE(message) _die(message, __LINE__)
+
 static std::vector<FPackedVertex> make_sphere() {
     std::vector<FVertexPNU> ret;
     ret.resize(std::size(SPHERE_POS));
@@ -332,6 +339,181 @@ std::string find_and_set(std::vector<std::string> const& args, const char* flag)
     return "";
 }
 
+FBlob* blob_from_file(std::string const& path) {
+    spdlog::debug("Memmap {}...", path);
+    if (!std::filesystem::exists(path)) { return nullptr; }
+
+
+    int fd = open(path.c_str(), O_RDWR);
+    if (fd == -1) {
+        spdlog::error("Unable to read {}", path);
+        return nullptr;
+    }
+
+    struct stat sb;
+    if (fstat(fd, &sb) == -1) {
+        spdlog::error("Unable to read {}", path);
+        return nullptr;
+    }
+
+    size_t file_size = sb.st_size;
+
+    spdlog::debug("Memmap {}: {}", path, file_size);
+
+    void* mapped_data =
+        mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mapped_data == MAP_FAILED) {
+        spdlog::error("Unable to map {}", path);
+        return nullptr;
+    }
+
+    char* data_ptr = static_cast<char*>(mapped_data);
+
+    auto* img_blob = fblob_init_copy(data_ptr, file_size);
+
+    munmap(mapped_data, file_size);
+    close(fd);
+
+    return img_blob;
+}
+
+std::pair<FImage*, FImageFileInfo> image_from_file(std::string const& path) {
+    auto img_blob = blob_from_file(path);
+
+    if (!img_blob) {
+        spdlog::error("Unable to create image");
+        return std::make_pair(nullptr, FImageFileInfo {});
+    }
+
+    auto ref = fblobref_whole(img_blob);
+
+    FImageFileInfo info { IMG_UNKNOWN };
+    fimg_probe(ref, &info);
+
+    auto* image = fimg_init_decode_file(ref);
+
+    fblob_release(img_blob);
+
+    return std::make_pair(image, info);
+}
+
+FTexture* texture_from_file(FSession*          session,
+                            std::string const& path,
+                            FTextureFormat     format) {
+    spdlog::info("Loading image {}...", path);
+
+    auto [img, info] = image_from_file(path);
+
+    if (!img) { return nullptr; }
+
+    auto* cfg = ftex_config_init(img, format);
+    auto* tex = ftex_init(session, cfg);
+    ftex_config_destroy(cfg);
+    fimg_release(img);
+
+    return tex;
+}
+
+
+void make_ground_plane(FSession* session, std::string const& img_root) {
+    // Simple 2-triangle quad centered at origin on Y=0
+    const FVertexPNU planeVerts[] = {
+        { { -10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
+        { { 10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
+        { { 10.0f, 0.0f, 10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f } },
+        { { -10.0f, 0.0f, 10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },
+    };
+
+    const ushort3 planeIdx[] = {
+        { 0, 2, 1 },
+        { 0, 3, 2 },
+    };
+
+    FPackedVertex planePacked[4];
+    pack_vertex_u16(planeVerts, 4, planeIdx, 2, planePacked);
+
+    auto* planeVBlob =
+        fblob_init_copy((char const*)planePacked, sizeof(planePacked));
+    auto* planeIBlob = fblob_init_copy((char const*)planeIdx, sizeof(planeIdx));
+
+    auto* planeMesh =
+        fmesh_init(session,
+                   fblobref_whole(planeVBlob),
+                   4,
+                   fblobref_whole(planeIBlob),
+                   6,
+                   FMeshIndexType::U16,
+                   aabb { { -10.0f, 0.0f, -10.0f }, { 10.0f, 0.0f, 10.0f } });
+
+    // Material for the ground with textures
+    auto planeMatCfg = fmaterialconfig_init();
+
+
+    // Sampler: linear filtering + mipmaps, repeat
+    Sampler samp;
+    fsamp_init(&samp);
+    fsamp_set_mag(&samp, MAG_FILTER_LINEAR);
+    fsamp_set_min(&samp, MIN_FILTER_LINEAR_MIPMAP_LINEAR);
+    fsamp_set_wrap(&samp, WRAP_REPEAT, AXIS_U);
+    fsamp_set_wrap(&samp, WRAP_REPEAT, AXIS_V);
+    fsamp_set_aniso(&samp, 4);
+
+    // Base color (sRGB)
+    {
+        auto path = img_root + "/MetalPlates006_1K-JPG_Color.jpg";
+
+        auto* tex = texture_from_file(session, path, FMT_AUTO_SRGB_COLOR);
+
+        if (!tex) { DIE("Unable to load base color texture"); }
+
+        fmc_set_texture(
+            planeMatCfg, BASE_COLOR_TEX, FMatTexUVSlot::UV0, tex, &samp);
+
+        ftex_release(tex);
+    }
+
+
+    // Normal map (linear)
+    {
+        auto path = img_root + "/MetalPlates006_1K-JPG_NormalGL.jpg";
+
+        auto* tex = texture_from_file(session, path, FMT_AUTO_LINEAR_DATA);
+
+        if (!tex) { DIE("Unable to load normal texture"); }
+
+        fmc_set_texture(
+            planeMatCfg, NORMAL_TEX, FMatTexUVSlot::UV0, tex, &samp);
+
+        ftex_release(tex);
+    }
+
+
+    // Metallic-Roughness map (linear)
+
+    {
+        auto path = img_root + "/MetalPlates006_1K-JPG_RM.png";
+
+        auto* tex = texture_from_file(session, path, FMT_AUTO_LINEAR_DATA);
+
+        if (!tex) { DIE("Unable to load RM texture"); }
+
+        fmc_set_texture(
+            planeMatCfg, METAL_ROUGH_TEX, FMatTexUVSlot::UV0, tex, &samp);
+
+        ftex_release(tex);
+    }
+
+    auto* planeMat = fmaterial_init(session, planeMatCfg);
+    fmaterialconfig_destroy(planeMatCfg);
+
+    fmaterial_set_base_color(planeMat, { .r = 1, .g = 1, .b = 1, .a = 1 });
+    fmaterial_set_roughness_metallic(planeMat, 1.0, 0);
+
+    auto planeEntity = fs_new_entity(session);
+    fs_add_renderable(session, planeEntity, planeMesh, planeMat);
+    // Plane is already at world Y=0; no transform needed.
+}
+
 
 int main(int argc, char** argv) {
 
@@ -346,7 +528,7 @@ int main(int argc, char** argv) {
     spdlog::info("Starting up...");
 
 
-#if 0
+#if 1
     FScreenPlane plane {
         .lower_left  = { -2.5, 0, -1.768 },
         .lower_right = { 2.5, 0, -1.768 },
@@ -439,54 +621,10 @@ int main(int argc, char** argv) {
 
     // ---------------------------------------------------------------------
     // Add a large ground plane to receive shadows
-    {
-        // Simple 2-triangle quad centered at origin on Y=0
-        const FVertexPNU planeVerts[] = {
-            { { -10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f } },
-            { {  10.0f, 0.0f, -10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 0.0f } },
-            { {  10.0f, 0.0f,  10.0f }, { 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f } },
-            { { -10.0f, 0.0f,  10.0f }, { 0.0f, 1.0f, 0.0f }, { 0.0f, 1.0f } },
-        };
+    auto plane_asset = find_and_set(arguments, "-a");
 
-        const ushort3 planeIdx[] = {
-            { 0, 2, 1 },
-            { 0, 3, 2 },
-        };
+    if (!plane_asset.empty()) { make_ground_plane(session, plane_asset); }
 
-        FPackedVertex planePacked[4];
-        pack_vertex_u16(planeVerts,
-                        4,
-                        planeIdx,
-                        2,
-                        planePacked);
-
-        auto* planeVBlob =
-            fblob_init_copy((char const*)planePacked, sizeof(planePacked));
-        auto* planeIBlob =
-            fblob_init_copy((char const*)planeIdx, sizeof(planeIdx));
-
-        auto* planeMesh = fmesh_init(session,
-                                     fblobref_whole(planeVBlob),
-                                     4,
-                                     fblobref_whole(planeIBlob),
-                                     6,
-                                     FMeshIndexType::U16,
-                                     aabb { { -10.0f, 0.0f, -10.0f },
-                                            { 10.0f, 0.0f, 10.0f } });
-
-        // Opaque, rough material for the ground
-        auto planeMatCfg = fmaterialconfig_init();
-
-        auto* planeMat = fmaterial_init(session, planeMatCfg);
-        fmaterialconfig_destroy(planeMatCfg);
-
-        fmaterial_set_base_color(planeMat, { 0.7f, 0.7f, 0.7f, 1.0f });
-        fmaterial_set_roughness_metallic(planeMat, 1.0f, 0.0f);
-
-        auto planeEntity = fs_new_entity(session);
-        fs_add_renderable(session, planeEntity, planeMesh, planeMat);
-        // Plane is already at world Y=0; no transform needed.
-    }
 
     // ---------------------------------------------------------------------
     // Add a downward directional light that casts shadows
@@ -510,68 +648,35 @@ int main(int argc, char** argv) {
     auto maybe_image = find_and_set(arguments, "-i");
 
     if (!maybe_image.empty()) {
-        if (std::filesystem::exists(maybe_image)) {
 
+        auto [image, info] = image_from_file(maybe_image);
 
-            int fd = open(maybe_image.c_str(), O_RDWR);
-            if (fd == -1) {
-                spdlog::error("Unable to read envmap");
-                return EXIT_FAILURE;
-            }
-
-            struct stat sb;
-            if (fstat(fd, &sb) == -1) {
-                spdlog::error("Unable to read envmap");
-                return EXIT_FAILURE;
-            }
-
-            size_t file_size = sb.st_size;
-
-            void* mapped_data = mmap(
-                NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-            if (mapped_data == MAP_FAILED) {
-                spdlog::error("Unable to load envmap");
-                return EXIT_FAILURE;
-            }
-
-            char* data_ptr = static_cast<char*>(mapped_data);
-
-            auto* img_blob = fblob_init_copy(data_ptr, file_size);
-
-            munmap(mapped_data, file_size);
-            close(fd);
-
-            auto ref = fblobref_whole(img_blob);
-
-            FImageFileInfo info { IMG_UNKNOWN };
-            fimg_probe(ref, &info);
-
-            auto* image = fimg_init_decode_file(ref);
-
-            fblob_release(img_blob);
-
-            TextureFormat desired_fmt =
-                (info.kind == IMG_EXR || info.kind == IMG_HDR)
-                    ? FMT_R11F_G11F_B10F
-                    : FMT_AUTO_SRGB_COLOR;
-
-            auto* texture_cfg = ftex_config_init(image, desired_fmt);
-
-            auto* texture = ftex_init(session, texture_cfg);
-
-            ftex_config_destroy(texture_cfg);
-
-            auto* ibl = fenv_light_init_equirect(session, texture);
-
-            ftex_release(texture);
-            fimg_release(image);
-
-            fs_set_environment_light(session, ibl);
-
-            fenv_light_release(ibl);
-
-            spdlog::info("Setting env light");
+        if (!image) {
+            spdlog::error("Unable to read envmap");
+            return EXIT_FAILURE;
         }
+
+        FTextureFormat desired_fmt =
+            (info.kind == IMG_EXR || info.kind == IMG_HDR)
+                ? FMT_R11F_G11F_B10F
+                : FMT_AUTO_SRGB_COLOR;
+
+        auto* texture_cfg = ftex_config_init(image, desired_fmt);
+
+        auto* texture = ftex_init(session, texture_cfg);
+
+        ftex_config_destroy(texture_cfg);
+
+        auto* ibl = fenv_light_init_equirect(session, texture);
+
+        ftex_release(texture);
+        fimg_release(image);
+
+        fs_set_environment_light(session, ibl);
+
+        fenv_light_release(ibl);
+
+        spdlog::info("Setting env light");
     }
 
     float debug_head = 0;
@@ -587,8 +692,8 @@ int main(int argc, char** argv) {
         auto duration =
             std::chrono::duration<double>(frame_time - prev_frame_time).count();
 
-        // float new_head_x = std::sin(debug_head) * 2.0f - 1.0f;
-        float new_head_x = 1.0;
+        float new_head_x = std::sin(debug_head) * 2.0f - 1.0f;
+        // float new_head_x = 1.0;
 
         float3 head_pos = { new_head_x, 1.5f, 5.0f };
         float4 head_rot = { 0.0f, 0.0f, 0.0f, 1.0f };

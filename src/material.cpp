@@ -1,14 +1,16 @@
 #include "material.h"
 
+#include "session.h"
+
 #include <filament/TextureSampler.h>
 #include <image/LinearImage.h>
 #include <imageio/ImageDecoder.h>
 
-#include "session.h"
+#include <magic_enum/magic_enum.hpp>
 
 #include <algorithm>
+#include <cassert>
 #include <cmath>
-#include <magic_enum/magic_enum.hpp>
 
 
 // =============================================================================
@@ -74,14 +76,11 @@ FImageContent::FImageContent(FBlobRef ref) {
     m_type       = PIXEL_FLOAT32;
     m_colorspace = CS_LINEAR;
 
-    spdlog::info("Found image {} {} {} {} bytes", w, h, n, m_description.size);
+    spdlog::info(
+        "Creating image {} {} {} {} bytes", w, h, n, m_description.size);
 
     // documentation says image data under the hood is refcounted??
     m_linear = std::make_unique<image::LinearImage>(lin_image);
-
-    auto* ptr = m_linear->getPixelRef();
-
-    spdlog::debug("Data {} {} {} {}", ptr[0], ptr[1], ptr[2], ptr[3]);
 
     spdlog::debug("Creating image {} from blob {}", (void*)this, (void*)ref.id);
 }
@@ -102,6 +101,14 @@ FImageContent::FImageContent(FImageRawDesc const& desc, Bytes pixels) {
     m_type       = desc.type;
     m_colorspace = desc.colorspace;
     m_raw        = pixels;
+
+    spdlog::info("Creating image, {} {}, {} {} {} = {} bytes",
+                 magic_enum::enum_name(desc.type),
+                 magic_enum::enum_name(desc.colorspace),
+                 m_description.width,
+                 m_description.height,
+                 m_description.n_channels,
+                 m_description.size);
 }
 
 FImageContent::~FImageContent() {
@@ -123,10 +130,17 @@ FTextureConfig::FTextureConfig(RefCounted<FImageContent>* ptr)
 
 
 void FTextureContent::completion(void* buffer, size_t, void* user) {
+    spdlog::debug("Completing texture {}", user);
     auto* ptr    = ((FTextureContent*)user);
+
+    // we no longer need the image
     ptr->m_image = {};
+
+    // Remove all staging bytes
     ptr->m_staging_bytes.clear();
     ptr->m_staging_bytes.shrink_to_fit();
+
+    // Regenerate mipmaps
     ptr->texture()->generateMipmaps(*ptr->m_engine);
 }
 
@@ -190,6 +204,7 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
     if (m_image->has_linear()) {
         // Source is float32 linear
         if (desire_u8) {
+            spdlog::warn("Converting linear texture to ubyte");
             // Fallback convert float->8bit (linear or sRGB)
             m_staging_bytes.resize(width * height * ch);
             const float* src = m_image->image_linear().getPixelRef();
@@ -211,17 +226,26 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
             data_ptr   = m_staging_bytes.data();
             byte_size  = m_staging_bytes.size();
         } else {
+            spdlog::debug("Linear to linear: no conversion");
             // float-in, float-out
             data_ptr   = m_image->image_linear().getPixelRef();
             pixel_type = filament::Texture::Type::FLOAT;
         }
     } else {
+        // Not linear data
+
         // Source is raw bytes
         if (desire_u8 || m_image->pixel_type() == PIXEL_UBYTE) {
+            spdlog::debug("ubyte to ubyte: no conversion");
+
+            // we have stored the image, so the data refs here should live long
+            // enough
             data_ptr   = m_image->image_raw().data();
             pixel_type = filament::Texture::Type::UBYTE;
             byte_size  = m_image->description().size;
         } else {
+            // Do not want u8 and the pixel type is not u8
+            spdlog::warn("What?");
             // Raw FLOAT32 upload
             data_ptr   = m_image->image_raw().data();
             pixel_type = filament::Texture::Type::FLOAT;
@@ -230,8 +254,13 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
     }
 
     // Transfer to GPU
-    auto buffer = filament::Texture::PixelBufferDescriptor(
-        data_ptr, byte_size, pixel_format, pixel_type, completion, this);
+    auto buffer =
+        filament::Texture::PixelBufferDescriptor(data_ptr,
+                                                 byte_size,
+                                                 pixel_format,
+                                                 pixel_type,
+                                                 FTextureContent::completion,
+                                                 this);
 
     m_texture->setImage(*m_engine, 0, std::move(buffer));
 
@@ -247,7 +276,7 @@ FTextureContent::~FTextureContent() {
 // =============================================================================
 
 
-FTextureConfig* ftex_config_init(FImage* ptr, TextureFormat format) {
+FTextureConfig* ftex_config_init(FImage* ptr, FTextureFormat format) {
     if (!ptr) return nullptr;
 
     auto p = new FTextureConfig(as_rc(ptr));
@@ -357,7 +386,7 @@ void FMaterialConfigInternal::set_texture(FMatTexSemantic semantic,
         material_key.hasEmissiveTexture = true;
         material_key.emissiveUV         = slot;
         break;
-    case MAT_ROUGH_TEX:
+    case METAL_ROUGH_TEX:
         material_key.hasMetallicRoughnessTexture = true;
         material_key.metallicRoughnessUV         = slot;
         break;
@@ -400,10 +429,31 @@ FMaterialContent::FMaterialContent(filament::Engine*              engine,
     : m_engine(engine), m_instance(instance) {
     spdlog::debug("new material: {}", (void*)m_instance);
 
+    assert(magic_enum::enum_count<FMatTexSemantic>() <
+           m_linked_textures.size());
+
     for (auto i : magic_enum::enum_values<FMatTexSemantic>()) {
         auto const& tex  = config.linked_textures[(int)i];
         auto const& samp = config.linked_texture_samplers[(int)i];
         if (tex) { set_texture(i, tex, samp); }
+    }
+
+    spdlog::debug("Mat key:");
+
+    __builtin_dump_struct(&config.material_key, &printf);
+
+    auto* mat = instance->getMaterial();
+
+    std::vector<filament::Material::ParameterInfo> infos(
+        mat->getParameterCount());
+
+    mat->getParameters(infos.data(), infos.size());
+
+    for (auto info : infos) {
+        spdlog::debug("- {}: {} {}",
+                      info.name,
+                      magic_enum::enum_name(info.type),
+                      magic_enum::enum_name(info.samplerType));
     }
 }
 
@@ -448,7 +498,7 @@ inline const char* map_semantic_to_param(FMatTexSemantic semantic) {
     case NORMAL_TEX: return "normalMap";
     case OCCLUSION_TEX: return "occlusionMap";
     case EMISSIVE_TEX: return "emissiveMap";
-    case MAT_ROUGH_TEX: return "metallicRoughnessMap";
+    case METAL_ROUGH_TEX: return "metallicRoughnessMap";
     case CLEARCOAT_TEX: return "clearCoatMap";
     case CLEARCOAT_ROUGH_TEX: return "clearCoatRoughnessMap";
     case CLEARCOAT_NORMAL_TEX: return "clearCoatNormalMap";
@@ -461,12 +511,37 @@ inline const char* map_semantic_to_param(FMatTexSemantic semantic) {
 void FMaterialContent::set_texture(FMatTexSemantic               semantic,
                                    Owned<FTextureContent> const& content,
                                    Sampler                       sampler) {
+    spdlog::debug("Material {}, set tex {} {} {}",
+                  (void*)this,
+                  magic_enum::enum_name(semantic),
+                  (void*)content.get(),
+                  sampler.pack);
     m_linked_textures[semantic]         = content;
     m_linked_texture_samplers[semantic] = sampler;
 
     auto b_sampler =
         filament::TextureSampler(*(filament::backend::SamplerParams*)&sampler);
 
-    m_instance->setParameter(
-        map_semantic_to_param(semantic), content->texture(), b_sampler);
+    auto parameter_name = map_semantic_to_param(semantic);
+
+    spdlog::debug("Material {}: {} {}",
+                  (void*)this,
+                  parameter_name,
+                  (void*)content->texture());
+
+    __builtin_dump_struct(&b_sampler, &printf);
+
+    switch (semantic) {
+
+    case BASE_COLOR_TEX: break;
+    case NORMAL_TEX: m_instance->setParameter("normalScale", 1.0f); break;
+    case OCCLUSION_TEX: break;
+    case EMISSIVE_TEX: break;
+    case METAL_ROUGH_TEX: break;
+    case CLEARCOAT_TEX: break;
+    case CLEARCOAT_ROUGH_TEX: break;
+    case CLEARCOAT_NORMAL_TEX: break;
+    }
+
+    m_instance->setParameter(parameter_name, content->texture(), b_sampler);
 }
