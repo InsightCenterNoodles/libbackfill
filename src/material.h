@@ -13,21 +13,12 @@ namespace image {
 class LinearImage;
 }
 
-struct ImageDescription {
-    size_t width;
-    size_t height;
-    size_t n_channels;
-    size_t size;
-};
-
 class FImageContent {
 
     std::unique_ptr<image::LinearImage> m_linear; // float32 path
     Bytes                               m_raw;    // raw pixel bytes
 
-    ImageDescription m_description;
-    FPixelType       m_type       = PIXEL_FLOAT32;
-    FColorSpace      m_colorspace = CS_LINEAR;
+    FImageRawDesc m_description;
 
 public:
     DISABLE_MOVE_COPY(FImageContent);
@@ -40,12 +31,12 @@ public:
     ~FImageContent();
 
     auto const& description() const { return m_description; }
-    FPixelType  pixel_type() const { return m_type; }
-    FColorSpace colorspace() const { return m_colorspace; }
+    FPixelType  pixel_type() const { return m_description.type; }
+    FColorSpace colorspace() const { return m_description.colorspace; }
 
     // Accessors depending on storage kind
-    bool                      has_linear() const { return (bool)m_linear; }
-    image::LinearImage const& image_linear() const { return *m_linear; }
+    bool                      has_float() const { return (bool)m_linear; }
+    image::LinearImage const& image_float() const { return *m_linear; }
     Bytes const&              image_raw() const { return m_raw; }
 };
 
@@ -95,7 +86,7 @@ struct FMaterialConfigInternal {
     std::array<Owned<FTextureContent>, 16> linked_textures;
     std::array<Sampler, 16>                linked_texture_samplers;
 
-    void set_option(FMatTexOption, uint8_t);
+    void set_option(FMatOption, uint8_t);
     void set_texture(FMatTexSemantic, FMatTexUVSlot, FTexture*, Sampler*);
     void set_blend(FMatBlendType);
 };

@@ -15,7 +15,7 @@
 #include <imageio/ImageDecoder.h>
 #include <math/mat4.h>
 #include <utils/EntityManager.h>
-// stb integration for LDR decoding
+
 #include <stb_image.h>
 
 #include <cstring>
@@ -232,7 +232,7 @@ void fmaterialconfig_destroy(FMaterialConfig* ptr) {
     as_rc(ptr)->release();
 }
 
-void fmc_set_option(FMaterialConfig* ptr, FMatTexOption tex, uint8_t value) {
+void fmc_set_option(FMaterialConfig* ptr, FMatOption tex, uint8_t value) {
     as_rc(ptr)->item.set_option(tex, value);
 }
 void fmc_set_texture(FMaterialConfig* ptr,
@@ -291,7 +291,77 @@ void fmaterial_set_texture(FMaterial*      ptr,
 // =============================================================================
 // File probe and image initialization ========================================
 
-static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) {
+static inline bool is_png_srgb(std::span<const char> bytes) {
+
+    // each chunk has a header of 8, a u32 len and 4 x u8 ident
+
+    auto advance = [&bytes](size_t amount) {
+        if (bytes.size() < amount) {
+            bytes = {};
+        } else {
+            bytes = bytes.subspan(amount);
+        }
+    };
+
+    auto take_prim = [&]<class T>(T& out) {
+        std::memcpy(&out, bytes.data(), sizeof(T));
+        advance(sizeof(T));
+    };
+
+    auto take_uint32 = [&]() -> uint32_t {
+        uint32_t local = 0;
+        take_prim(local);
+
+        return __builtin_bswap32(local);
+    };
+
+    auto near = [](float a, float b) { return std::abs(a - b) < .001; };
+
+    uint32_t                gamma     = 0;
+    std::array<uint32_t, 8> cHRM      = {};
+    std::array<uint32_t, 8> cHRM_srgb = {
+        31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000,
+    };
+    bool have_chrm = false;
+
+    while (bytes.size() > 8) {
+        uint32_t length = take_uint32();
+
+        std::array<char, 4> ident = {};
+        take_prim(ident);
+
+        auto view = std::string_view(ident.data(), 4);
+
+        if (view == "sRGB") {
+            return true;
+        } else if (view == "gAMA") {
+            gamma = take_uint32();
+        } else if (view == "cHRM") {
+            take_prim(cHRM);
+            have_chrm = true;
+        }
+
+        // skip data and CRC
+        advance(length + 4);
+    }
+
+    if (gamma != 0 and have_chrm) {
+        bool gamma_ok = 45452 < gamma and gamma < 45457;
+
+        if (!gamma_ok) return false;
+
+        for (int i = 0; i < cHRM.size(); i++) {
+            if (__builtin_bswap32(cHRM[i]) != cHRM_srgb[i]) { return false; }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+static inline bool probe_kind_from_magic(std::span<const char> bytes,
+                                         FImageFileInfo*       out) {
 
     // EXR
     if (bytes.size() >= 4) {
@@ -299,7 +369,11 @@ static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) 
         const unsigned char* u = (const unsigned char*)bytes.data();
         uint32_t magic = (uint32_t)u[0] | ((uint32_t)u[1] << 8) |
                          ((uint32_t)u[2] << 16) | ((uint32_t)u[3] << 24);
-        if (magic == 0x01312F76u || magic == 0x762F3101u) { return IMG_EXR; }
+        if (magic == 0x01312F76u || magic == 0x762F3101u) {
+            out->colorspace = CS_LINEAR;
+            out->kind       = IMG_EXR;
+            return true;
+        }
     }
 
     // PNG
@@ -309,7 +383,12 @@ static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) 
         // PNG signature
         if (u[0] == 0x89 && u[1] == 0x50 && u[2] == 0x4E && u[3] == 0x47 &&
             u[4] == 0x0D && u[5] == 0x0A && u[6] == 0x1A && u[7] == 0x0A) {
-            return IMG_PNG;
+
+            bool is_srgb = is_png_srgb(bytes.subspan(8));
+
+            out->colorspace = is_srgb ? CS_SRGB : CS_LINEAR;
+            out->kind       = IMG_PNG;
+            return true;
         }
     }
 
@@ -317,7 +396,11 @@ static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) 
     if (bytes.size() >= 3) {
         const unsigned char* u = (const unsigned char*)bytes.data();
         // JPEG SOI
-        if (u[0] == 0xFF && u[1] == 0xD8 && u[2] == 0xFF) { return IMG_JPEG; }
+        if (u[0] == 0xFF && u[1] == 0xD8 && u[2] == 0xFF) {
+            out->colorspace = CS_SRGB;
+            out->kind       = IMG_JPEG;
+            return true;
+        }
     }
 
     // HDR
@@ -326,18 +409,22 @@ static inline FImageFileKind probe_kind_from_magic(std::span<const char> bytes) 
         std::string_view head(
             bytes.data(), bytes.data() + std::min<size_t>(bytes.size(), 10));
         if (head.rfind("#?RADIANCE", 0) == 0 || head.rfind("#?RGBE", 0) == 0) {
-            return IMG_HDR;
+            out->colorspace = CS_LINEAR;
+            out->kind       = IMG_HDR;
+            return true;
         }
     }
-    return IMG_UNKNOWN;
+
+    return false;
 }
 
 uint8_t fimg_probe(FBlobRef ref, FImageFileInfo* out) {
     auto b = ref_to_bytes(ref);
     if (!b) return 0;
-    auto kind = probe_kind_from_magic(b.span());
-    if (out) out->kind = kind;
-    return kind != IMG_UNKNOWN;
+    if (!out) return 0;
+    out->kind       = IMG_UNKNOWN;
+    out->colorspace = CS_SRGB;
+    return probe_kind_from_magic(b.span(), out);
 }
 
 FImage* fimg_init_raw(FBlobRef ref, FImageRawDesc const* desc) {
@@ -368,7 +455,7 @@ inline FImage* use_float_decoder(FBlobRef ref) {
     return from_rc(ptr);
 }
 
-FImage* use_ldr_decoder(FBlobRef ref) {
+FImage* use_ldr_decoder(FBlobRef ref, FColorSpace colorspace) {
     spdlog::debug("Using LDR decoder");
     // must be valid, otherwise we couldn't get to this function
     auto b = ref_to_bytes(ref);
@@ -407,7 +494,12 @@ FImage* use_ldr_decoder(FBlobRef ref) {
 
 
     FImageRawDesc d {
-        (uint32_t)x, (uint32_t)y, (uint8_t)comp, PIXEL_UBYTE, CS_SRGB
+        .width      = (uint32_t)x,
+        .height     = (uint32_t)y,
+        .n_channels = (uint8_t)comp,
+        .byte_size  = nbytes,
+        .type       = PIXEL_UBYTE,
+        .colorspace = colorspace,
     };
 
     auto ptr = make_refcounted_unsafe<FImageContent>(d, pixels);
@@ -425,18 +517,22 @@ FImage* fimg_init_decode_file(FBlobRef ref) {
 
     if (!b) return nullptr;
 
-    FImageFileKind kind = probe_kind_from_magic(b.span());
+    FImageFileInfo info;
 
-    spdlog::debug("Image is kind {}", magic_enum::enum_name(kind));
+    if (!probe_kind_from_magic(b.span(), &info)) return nullptr;
 
-    switch (kind) {
+    spdlog::debug("Image is kind {} {}",
+                  magic_enum::enum_name(info.kind),
+                  magic_enum::enum_name(info.colorspace));
+
+    switch (info.kind) {
     case IMG_EXR:
     case IMG_HDR:
         // Use Filament's float decoder for HDR
         // Color space request will be ignored; these wont be SRGB
         return use_float_decoder(ref);
     case IMG_PNG:
-    case IMG_JPEG: return use_ldr_decoder(ref);
+    case IMG_JPEG: return use_ldr_decoder(ref, info.colorspace);
     default: return use_float_decoder(ref);
     }
 }

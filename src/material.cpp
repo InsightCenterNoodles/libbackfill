@@ -70,14 +70,14 @@ FImageContent::FImageContent(FBlobRef ref) {
     m_description = {
         .width      = w,
         .height     = h,
-        .n_channels = n,
-        .size       = (size_t)w * (size_t)h * (size_t)n * sizeof(float),
+        .n_channels = static_cast<uint8_t>(n),
+        .byte_size  = (size_t)w * (size_t)h * (size_t)n * sizeof(float),
+        .type       = PIXEL_FLOAT32,
+        .colorspace = CS_LINEAR,
     };
-    m_type       = PIXEL_FLOAT32;
-    m_colorspace = CS_LINEAR;
 
     spdlog::info(
-        "Creating image {} {} {} {} bytes", w, h, n, m_description.size);
+        "Creating image {} {} {} {} bytes", w, h, n, m_description.byte_size);
 
     // documentation says image data under the hood is refcounted??
     m_linear = std::make_unique<image::LinearImage>(lin_image);
@@ -85,22 +85,11 @@ FImageContent::FImageContent(FBlobRef ref) {
     spdlog::debug("Creating image {} from blob {}", (void*)this, (void*)ref.id);
 }
 
-FImageContent::FImageContent(FImageRawDesc const& desc, Bytes pixels) {
+FImageContent::FImageContent(FImageRawDesc const& desc, Bytes pixels)
+    : m_description(desc), m_raw(pixels) {
     expect(desc.n_channels >= 1 && desc.n_channels <= 4,
            "Unsupported channel count");
 
-    m_description = {
-        .width      = desc.width,
-        .height     = desc.height,
-        .n_channels = desc.n_channels,
-        .size       = (size_t)desc.width * (size_t)desc.height *
-                (size_t)desc.n_channels *
-                (desc.type == PIXEL_UBYTE ? 1 : sizeof(float)),
-    };
-
-    m_type       = desc.type;
-    m_colorspace = desc.colorspace;
-    m_raw        = pixels;
 
     spdlog::info("Creating image, {} {}, {} {} {} = {} bytes",
                  magic_enum::enum_name(desc.type),
@@ -108,7 +97,7 @@ FImageContent::FImageContent(FImageRawDesc const& desc, Bytes pixels) {
                  m_description.width,
                  m_description.height,
                  m_description.n_channels,
-                 m_description.size);
+                 m_description.byte_size);
 }
 
 FImageContent::~FImageContent() {
@@ -157,6 +146,31 @@ static inline uint8_t to_srgb8(float linear) {
         std::lroundf(std::clamp(srgb, 0.0f, 1.0f) * 255.0f));
 }
 
+static inline void convert_float_to_u8(float const*          src,
+                                       size_t                width,
+                                       size_t                height,
+                                       size_t                nchannel,
+                                       bool                  desire_srgb,
+                                       std::vector<uint8_t>& dest) {
+    dest.resize(width * height * nchannel);
+
+    uint8_t* dst = dest.data();
+
+    if (desire_srgb) {
+        for (size_t i = 0, n = width * height; i < n; ++i) {
+            for (size_t c = 0; c < nchannel; ++c) {
+                dst[i * nchannel + c] = to_srgb8(src[i * nchannel + c]);
+            }
+        }
+    } else {
+        for (size_t i = 0, n = width * height; i < n; ++i) {
+            for (size_t c = 0; c < nchannel; ++c) {
+                dst[i * nchannel + c] = to_unorm8(src[i * nchannel + c]);
+            }
+        }
+    }
+}
+
 FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
     : m_image(config.image), m_engine(session->engine()) {
     m_texture = config.builder.build(*m_engine);
@@ -199,57 +213,87 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
 
     filament::Texture::Type pixel_type = filament::Texture::Type::FLOAT;
     const void*             data_ptr   = nullptr;
-    size_t                  byte_size  = desc.size;
+    size_t                  byte_size  = desc.byte_size;
 
-    if (m_image->has_linear()) {
+    if (m_image->has_float()) {
+
         // Source is float32 linear
+
         if (desire_u8) {
+            // but they want u8
             spdlog::warn("Converting linear texture to ubyte");
-            // Fallback convert float->8bit (linear or sRGB)
-            m_staging_bytes.resize(width * height * ch);
-            const float* src = m_image->image_linear().getPixelRef();
-            uint8_t*     dst = m_staging_bytes.data();
-            if (desire_srgb) {
-                for (size_t i = 0, n = width * height; i < n; ++i) {
-                    for (size_t c = 0; c < ch; ++c) {
-                        dst[i * ch + c] = to_srgb8(src[i * ch + c]);
-                    }
-                }
-            } else {
-                for (size_t i = 0, n = width * height; i < n; ++i) {
-                    for (size_t c = 0; c < ch; ++c) {
-                        dst[i * ch + c] = to_unorm8(src[i * ch + c]);
-                    }
-                }
-            }
+
+            convert_float_to_u8(m_image->image_float().getPixelRef(),
+                                width,
+                                height,
+                                ch,
+                                desire_srgb,
+                                m_staging_bytes);
+
+
             pixel_type = filament::Texture::Type::UBYTE;
+
             data_ptr   = m_staging_bytes.data();
             byte_size  = m_staging_bytes.size();
+
         } else {
-            spdlog::debug("Linear to linear: no conversion");
             // float-in, float-out
-            data_ptr   = m_image->image_linear().getPixelRef();
+            spdlog::debug("Linear to linear: no conversion");
+
+            data_ptr   = m_image->image_float().getPixelRef();
             pixel_type = filament::Texture::Type::FLOAT;
         }
     } else {
-        // Not linear data
+        // Image does NOT have floating point data.
 
-        // Source is raw bytes
-        if (desire_u8 || m_image->pixel_type() == PIXEL_UBYTE) {
-            spdlog::debug("ubyte to ubyte: no conversion");
+        // It is possible to have float in the bytes if it came from an external
+        // source, not the file loader.
 
-            // we have stored the image, so the data refs here should live long
-            // enough
-            data_ptr   = m_image->image_raw().data();
-            pixel_type = filament::Texture::Type::UBYTE;
-            byte_size  = m_image->description().size;
+        if (desire_u8) {
+            switch (m_image->pixel_type()) {
+            case PIXEL_UBYTE:
+                // No conversion required
+                // we have stored the image, so the data refs here should live
+                // long enough
+                data_ptr   = m_image->image_raw().data();
+                pixel_type = filament::Texture::Type::UBYTE;
+                byte_size  = m_image->description().byte_size;
+                break;
+            case PIXEL_FLOAT32:
+                // We will have to convert.
+                convert_float_to_u8(m_image->image_float().getPixelRef(),
+                                    width,
+                                    height,
+                                    ch,
+                                    desire_srgb,
+                                    m_staging_bytes);
+
+
+                pixel_type = filament::Texture::Type::UBYTE;
+
+                data_ptr  = m_staging_bytes.data();
+                byte_size = m_staging_bytes.size();
+                break;
+            }
         } else {
-            // Do not want u8 and the pixel type is not u8
-            spdlog::warn("What?");
-            // Raw FLOAT32 upload
-            data_ptr   = m_image->image_raw().data();
-            pixel_type = filament::Texture::Type::FLOAT;
-            byte_size  = m_image->description().size;
+            // they want float
+
+            switch (m_image->pixel_type()) {
+            case PIXEL_UBYTE:
+                // They want float, but we have u8. So we have to convert.
+                // but is this SRGB?
+                spdlog::critical("Float to U8 Not yet supported");
+                abort();
+                break;
+            case PIXEL_FLOAT32:
+                // float-in, float-out
+                spdlog::debug("Linear to linear: no conversion");
+
+                data_ptr   = m_image->image_raw().data();
+                pixel_type = filament::Texture::Type::FLOAT;
+                byte_size  = m_image->description().byte_size;
+                break;
+            }
         }
     }
 
@@ -350,7 +394,7 @@ void ftex_release(FTexture* ptr) {
 
 // =============================================================================
 
-void FMaterialConfigInternal::set_option(FMatTexOption option, uint8_t opt) {
+void FMaterialConfigInternal::set_option(FMatOption option, uint8_t opt) {
     switch (option) {
     case DOUBLE_SIDED: material_key.doubleSided = opt; break;
     case UNLIT: material_key.unlit = opt; break;

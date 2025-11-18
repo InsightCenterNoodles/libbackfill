@@ -184,8 +184,13 @@ FSession::FSession(FConfig const& config) : RenderState(config) {
 
 FSession::~FSession() {
     spdlog::debug("Closing session...");
-    // we are leaving this commented until we have a better shutdown
-    // otherwise we get a crash
+
+
+    //  we are leaving this commented until we have a better shutdown
+    //  otherwise we get a crash
+
+    // delete m_provider;
+
 
     // for (auto* m : m_materials) {
     //        filament::Engine* engine = this->engine();

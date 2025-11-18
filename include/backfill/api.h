@@ -132,6 +132,9 @@ FBlobRef fblobref_whole(FBlob*);
 // Images ======================================================================
 // Represents the raw bytes needed for texturing
 
+// TODO: make sure we are SRGB safe for data content.
+// This is annoying, as it seems most content is
+
 typedef struct FImage FImage;
 
 /// The type of pixels in an image
@@ -151,6 +154,7 @@ typedef struct FImageRawDesc {
     uint32_t    width;
     uint32_t    height;
     uint8_t     n_channels; // 1..4 supported
+    uint64_t    byte_size;
     FPixelType  type;       // UBYTE or FLOAT32
     FColorSpace colorspace; // hint for choosing internal format and sampling
 } FImageRawDesc;
@@ -175,6 +179,7 @@ typedef enum FImageFileKind {
 
 typedef struct FImageFileInfo {
     FImageFileKind kind;
+    FColorSpace    colorspace;
 } FImageFileInfo;
 
 /// Inspect magic bytes to classify file kind. Returns 1 if recognized.
@@ -265,7 +270,7 @@ typedef enum FMatOption {
     CLEARCOAT,
     TRANSMISSION,
     IOR
-} FMatTexOption;
+} FMatOption;
 
 typedef enum FMatTexSemantic {
     BASE_COLOR_TEX,
@@ -330,7 +335,7 @@ void             fmaterialconfig_destroy(FMaterialConfig*);
 /// Set an option on a material.
 /// NOTE: Attempting to set options parameters (like transmission) on a material
 /// that is not enabled in the config will result in an error
-void fmc_set_option(FMaterialConfig*, FMatTexOption, uint8_t);
+void fmc_set_option(FMaterialConfig*, FMatOption, uint8_t);
 
 /// Set, and enable, the use of a texture for a given semantic.
 /// NOTE: Attempting to set a texture for a semantic on a constructed material

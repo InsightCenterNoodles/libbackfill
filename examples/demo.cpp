@@ -573,8 +573,8 @@ int main(int argc, char** argv) {
 
     auto mat_config = fmaterialconfig_init();
 
-    fmc_set_option(mat_config, FMatTexOption::IOR, 1);
-    fmc_set_option(mat_config, FMatTexOption::TRANSMISSION, 1);
+    fmc_set_option(mat_config, FMatOption::IOR, 1);
+    fmc_set_option(mat_config, FMatOption::TRANSMISSION, 1);
 
     auto* mat = fmaterial_init(session, mat_config);
 
