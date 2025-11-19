@@ -131,6 +131,10 @@ void fenv_light_release(FEnvironmentLight* ptr) {
     as_rc(ptr)->release();
 }
 
+void fenv_set_intensity(FEnvironmentLight* ptr, float intensity) {
+    as_rc(ptr)->item.set_intensity(intensity);
+}
+
 // =============================================================================
 
 FMesh* fmesh_init(FSession*      session,

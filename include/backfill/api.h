@@ -247,6 +247,8 @@ FEnvironmentLight* fenv_light_init_equirect(FSession*, FTexture*);
 void               fenv_light_acquire(FEnvironmentLight*);
 void               fenv_light_release(FEnvironmentLight*);
 
+void fenv_set_intensity(FEnvironmentLight*, float intensity);
+
 // Mesh ========================================================================
 
 typedef enum FMeshIndexType { U16, U32 } FMeshIndexType;

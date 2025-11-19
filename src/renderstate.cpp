@@ -27,7 +27,7 @@ RenderState::RenderState(FConfig const& config)
     m_camera->setProjection(
         45.0, aspect_ratio, 0.0625, 4096, filament::Camera::Fov::VERTICAL);
 
-    m_camera->lookAt({ 15, 15, 15 }, { 0, 0, 0 }, { 0, 1, 0 });
+    m_camera->lookAt({ 5, 5, 5 }, { 0, 0, 0 }, { 0, 1, 0 });
 
     m_view = m_engine->createView();
     m_view->setViewport({ 0, 0, width, height });

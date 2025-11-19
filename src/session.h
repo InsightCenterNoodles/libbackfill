@@ -79,6 +79,8 @@ public:
 
     filament::IndirectLight* indirect_light() { return m_indirect_light; }
     filament::Skybox*        skybox() { return m_skybox; }
+
+    void set_intensity(float);
 };
 
 C_BRIDGE(FEnvironmentLight, RefCounted<EnvLightContent>);

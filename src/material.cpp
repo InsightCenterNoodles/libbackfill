@@ -297,6 +297,11 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
         }
     }
 
+    spdlog::debug("Start transfer {} {} {}",
+                  byte_size,
+                  magic_enum::enum_name(pixel_format),
+                  magic_enum::enum_name(pixel_type));
+
     // Transfer to GPU
     auto buffer =
         filament::Texture::PixelBufferDescriptor(data_ptr,
@@ -482,23 +487,23 @@ FMaterialContent::FMaterialContent(filament::Engine*              engine,
         if (tex) { set_texture(i, tex, samp); }
     }
 
-    spdlog::debug("Mat key:");
+    // spdlog::debug("Mat key:");
 
-    __builtin_dump_struct(&config.material_key, &printf);
+    //__builtin_dump_struct(&config.material_key, &printf);
 
-    auto* mat = instance->getMaterial();
+    // auto* mat = instance->getMaterial();
 
-    std::vector<filament::Material::ParameterInfo> infos(
-        mat->getParameterCount());
+    // std::vector<filament::Material::ParameterInfo> infos(
+    //     mat->getParameterCount());
 
-    mat->getParameters(infos.data(), infos.size());
+    // mat->getParameters(infos.data(), infos.size());
 
-    for (auto info : infos) {
-        spdlog::debug("- {}: {} {}",
-                      info.name,
-                      magic_enum::enum_name(info.type),
-                      magic_enum::enum_name(info.samplerType));
-    }
+    // for (auto info : infos) {
+    //     spdlog::debug("- {}: {} {}",
+    //                   info.name,
+    //                   magic_enum::enum_name(info.type),
+    //                   magic_enum::enum_name(info.samplerType));
+    // }
 }
 
 FMaterialContent::~FMaterialContent() {

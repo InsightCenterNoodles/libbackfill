@@ -168,6 +168,10 @@ EnvLightContent::~EnvLightContent() {
     spdlog::debug("Destroying envlight {}", (void*)this);
 }
 
+void EnvLightContent::set_intensity(float f) {
+    m_indirect_light->setIntensity(f);
+}
+
 
 // =============================================================================
 
@@ -226,8 +230,8 @@ FSession::new_instance_for_type(FMaterialConfigInternal const& internal) {
     auto* ret = m_provider->createMaterialInstance(&key, &map);
 
     // the key could be mutated. check.
-    spdlog::debug("Realized mat key:");
-    __builtin_dump_struct(&key, &printf);
+    // spdlog::debug("Realized mat key:");
+    //__builtin_dump_struct(&key, &printf);
 
     return ret;
 }
@@ -300,7 +304,7 @@ void FSession::add_transform(utils::Entity e, mat4 const* tf) {
 
     auto hack = (filament::math::mat4f*)tf;
 
-    if (auto inst = tm.getInstance(e)) {
+    if (auto inst = tm.getInstance(e); inst.isValid()) {
         tm.setTransform(inst, *hack);
     } else {
         tm.create(e, {}, *hack);
@@ -308,15 +312,19 @@ void FSession::add_transform(utils::Entity e, mat4 const* tf) {
 }
 
 void FSession::set_parent(utils::Entity child, utils::Entity parent) {
+    spdlog::debug("Reparent child {} to {}", child.getId(), parent.getId());
     filament::Engine* ptr = engine();
 
     auto& tm = ptr->getTransformManager();
 
     if (!tm.hasComponent(parent)) { tm.create(parent); }
 
-    auto parent_instance = tm.getInstance(parent);
+    if (!tm.hasComponent(child)) { tm.create(child); }
 
-    tm.create(child, parent_instance);
+    auto parent_instance = tm.getInstance(parent);
+    auto child_instance  = tm.getInstance(child);
+
+    tm.setParent(child_instance, parent_instance);
 }
 
 void FSession::debug_camera(mat4* out_model, mat4* out_proj) {
