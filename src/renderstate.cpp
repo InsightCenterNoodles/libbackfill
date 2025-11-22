@@ -33,6 +33,15 @@ RenderState::RenderState(FConfig const& config)
     m_view->setViewport({ 0, 0, width, height });
 
     m_view->setShadowingEnabled(true);
+    m_view->setScreenSpaceRefractionEnabled(true);
+
+    // can be heavy
+    m_view->setScreenSpaceReflectionsOptions({ .enabled = true });
+
+    if (config.use_ssao) {
+        m_view->setAmbientOcclusionOptions({ .enabled = true });
+    }
+
 
     m_view->setScene(m_scene);
     m_view->setCamera(m_camera);

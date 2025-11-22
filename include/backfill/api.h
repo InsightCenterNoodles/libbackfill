@@ -406,6 +406,9 @@ typedef enum FEye { EYE_LEFT, EYE_RIGHT } FEye;
 /// Set off-axis eye
 void fconfig_set_stereo_eye(FConfig*, FEye);
 
+// Features, provisional
+void fconfig_set_ssao(FConfig*, bool);
+
 // Session =====================================================================
 
 /// Create a new backfill session

@@ -32,4 +32,6 @@ struct FConfig {
     bool log_debug = false;
 
     std::optional<ScreenDesc> screen_info;
+
+    bool use_ssao = false;
 };
