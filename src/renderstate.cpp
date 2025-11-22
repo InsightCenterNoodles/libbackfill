@@ -12,6 +12,8 @@ RenderState::RenderState(FConfig const& config)
       m_renderer(m_engine, m_platform),
       m_manager(utils::EntityManager::get()) {
 
+    m_engine->setAutomaticInstancingEnabled(true);
+
     m_scene = m_engine->createScene();
 
     m_main_camera = m_manager.create();
