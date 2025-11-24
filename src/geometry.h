@@ -67,6 +67,7 @@ public:
                      Bytes             content,
                      size_t            index_count,
                      IndexType         type);
+    ~LocalIndexBuffer();
 
     size_t index_count() const { return m_index_count; }
 

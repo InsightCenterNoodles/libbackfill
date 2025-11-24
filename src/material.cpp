@@ -317,6 +317,7 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
 }
 
 FTextureContent::~FTextureContent() {
+    assert(m_staging_bytes.empty());
     m_engine->destroy(m_texture);
 
     spdlog::debug("Destroying texture {}", (void*)this);

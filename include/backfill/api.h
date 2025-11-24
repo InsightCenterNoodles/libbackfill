@@ -407,7 +407,7 @@ typedef enum FEye { EYE_LEFT, EYE_RIGHT } FEye;
 void fconfig_set_stereo_eye(FConfig*, FEye);
 
 // Features, provisional
-void fconfig_set_ssao(FConfig*, bool);
+void fconfig_set_ssao(FConfig*, uint8_t);
 
 // Session =====================================================================
 

@@ -658,7 +658,7 @@ void fconfig_set_stereo_eye(FConfig* ptr, FEye eye) {
     ptr->left_eye = eye == EYE_LEFT;
 }
 
-void fconfig_set_ssao(FConfig* ptr, bool b) {
+void fconfig_set_ssao(FConfig* ptr, uint8_t b) {
     ptr->use_ssao = b;
 }
 

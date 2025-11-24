@@ -184,3 +184,7 @@ LocalIndexBuffer::LocalIndexBuffer(filament::Engine* engine,
                                                 completion,
                                                 this));
 }
+
+LocalIndexBuffer::~LocalIndexBuffer() {
+    assert(m_pending_upload.size() == 0);
+}
