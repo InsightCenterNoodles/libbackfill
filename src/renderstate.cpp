@@ -37,8 +37,8 @@ RenderState::RenderState(FConfig const& config)
     m_view->setShadowingEnabled(true);
     m_view->setScreenSpaceRefractionEnabled(true);
 
-    // can be heavy
-    m_view->setScreenSpaceReflectionsOptions({ .enabled = true });
+    // can be heavy. NEEDS TUNING BEFORE ENABLE
+    //m_view->setScreenSpaceReflectionsOptions({ .enabled = true });
 
     if (config.use_ssao) {
         m_view->setAmbientOcclusionOptions({ .enabled = true });

@@ -77,12 +77,18 @@ LocalPlatform::LocalPlatform(FConfig const& config) {
         window_flags |= SDL_WINDOW_METAL;
     }
 
-    if (config.full_screen) { window_flags |= SDL_WINDOW_FULLSCREEN; }
-
     window_flags |= SDL_WINDOW_ALWAYS_ON_TOP;
 
     m_window_pointer = SDL_CreateWindow(
         config.title.c_str(), config.w, config.h, window_flags);
+    
+    // we CANNOT use the normal method of just opening full screen.
+    // Causes lots of issues
+    if (config.full_screen) {
+        SDL_SetWindowFullscreen(m_window_pointer, true);
+        // Wait for the window to actually be full screen
+        SDL_SyncWindow(m_window_pointer);
+    }
 
     m_native_window = obtain_native_window(m_window_pointer);
 }
