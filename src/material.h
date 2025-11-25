@@ -7,6 +7,7 @@
 #include "backfill/api.h"
 #include "utility.h"
 
+#include <array>
 #include <vector>
 
 namespace image {
@@ -81,10 +82,10 @@ C_BRIDGE(FTexture, RefCounted<FTextureContent>);
 
 
 struct FMaterialConfigInternal {
-    filament::gltfio::MaterialKey material_key;
+    filament::gltfio::MaterialKey material_key {};
 
-    std::array<Owned<FTextureContent>, 16> linked_textures;
-    std::array<Sampler, 16>                linked_texture_samplers;
+    std::array<Owned<FTextureContent>, 16> linked_textures {};
+    std::array<Sampler, 16>                linked_texture_samplers {};
 
     void set_option(FMatOption, uint8_t);
     void set_texture(FMatTexSemantic, FMatTexUVSlot, FTexture*, Sampler*);
@@ -101,8 +102,8 @@ class FMaterialContent {
     filament::Engine*           m_engine   = nullptr;
     filament::MaterialInstance* m_instance = nullptr;
 
-    std::array<Owned<FTextureContent>, 16> m_linked_textures;
-    std::array<Sampler, 16>                m_linked_texture_samplers;
+    std::array<Owned<FTextureContent>, 16> m_linked_textures {};
+    std::array<Sampler, 16>                m_linked_texture_samplers {};
 
 public:
     FMaterialContent(filament::Engine*              engine,

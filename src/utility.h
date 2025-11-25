@@ -227,8 +227,6 @@ class RefCounted {
     // we put this first to allow casting of a RefCounted* to a T*;
 public:
     T item;
-
-private:
     mutable std::atomic<uint32_t> m_count = { 1 };
 
     // hide the destructor
@@ -240,7 +238,7 @@ public:
     template <class... Args>
     explicit RefCounted(Args&&... args) noexcept
         : item(std::forward<Args>(args)...) {
-        // static_assert(offsetof(RefCounted, item) == 0);
+        static_assert(offsetof(RefCounted, item) == 0);
     }
 
     void retain() const noexcept {

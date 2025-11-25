@@ -96,6 +96,14 @@ target_compile_options(backfill PRIVATE -Wno-c23-extensions)
 target_compile_options(backfill PRIVATE -stdlib=libc++)
 target_link_options(backfill PRIVATE -stdlib=libc++)
 
+
+
+if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    message(STATUS "Enabling AddressSanitizer for backfill")
+    target_compile_options(backfill PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(backfill   PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libc++")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -stdlib=libc++")
 

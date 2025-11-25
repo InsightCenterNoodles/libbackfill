@@ -123,14 +123,18 @@ void FTextureContent::completion(void* buffer, size_t, void* user) {
     auto* ptr    = ((FTextureContent*)user);
 
     // we no longer need the image
-    ptr->m_image = {};
+    // ptr->m_image = {};
 
     // Remove all staging bytes
-    ptr->m_staging_bytes.clear();
-    ptr->m_staging_bytes.shrink_to_fit();
+    // ptr->m_staging_bytes.clear();
+    // ptr->m_staging_bytes.shrink_to_fit();
 
     // Regenerate mipmaps
     ptr->texture()->generateMipmaps(*ptr->m_engine);
+
+    // Drop the temporary self-retain taken before setImage.
+    auto* rc_self = reinterpret_cast<RefCounted<FTextureContent>*>(ptr);
+    rc_self->release();
 }
 
 static inline uint8_t to_unorm8(float v) {
@@ -252,6 +256,7 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
         if (desire_u8) {
             switch (m_image->pixel_type()) {
             case PIXEL_UBYTE:
+                spdlog::debug("U8 to U8: no conversion");
                 // No conversion required
                 // we have stored the image, so the data refs here should live
                 // long enough
@@ -260,6 +265,7 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
                 byte_size  = m_image->description().byte_size;
                 break;
             case PIXEL_FLOAT32:
+                spdlog::warn("Float to U8: conversion!");
                 // We will have to convert.
                 convert_float_to_u8(m_image->image_float().getPixelRef(),
                                     width,
@@ -302,6 +308,16 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
                   magic_enum::enum_name(pixel_format),
                   magic_enum::enum_name(pixel_type));
 
+    // Keep the refcounted wrapper alive until Filament calls completion.
+    auto* rc_self = reinterpret_cast<RefCounted<FTextureContent>*>(this);
+    rc_self->retain();
+
+    spdlog::debug("QUICK DUMP: {} {} {} {}",
+                  ((uint8_t*)data_ptr)[0],
+                  ((uint8_t*)data_ptr)[1],
+                  ((uint8_t*)data_ptr)[2],
+                  ((uint8_t*)data_ptr)[3]);
+
     // Transfer to GPU
     auto buffer =
         filament::Texture::PixelBufferDescriptor(data_ptr,
@@ -311,7 +327,12 @@ FTextureContent::FTextureContent(FSession* session, FTextureConfig& config)
                                                  FTextureContent::completion,
                                                  this);
 
-    m_texture->setImage(*m_engine, 0, std::move(buffer));
+    try {
+        m_texture->setImage(*m_engine, 0, std::move(buffer));
+    } catch (...) {
+        rc_self->release();
+        throw;
+    }
 
     spdlog::debug("Creating texture {}", (void*)this);
 }
@@ -477,7 +498,7 @@ FMaterialContent::FMaterialContent(filament::Engine*              engine,
                                    filament::MaterialInstance*    instance,
                                    FMaterialConfigInternal const& config)
     : m_engine(engine), m_instance(instance) {
-    spdlog::debug("new material: {}", (void*)m_instance);
+    spdlog::debug("new material: {}", (void*)this);
 
     assert(magic_enum::enum_count<FMatTexSemantic>() <
            m_linked_textures.size());
@@ -508,7 +529,7 @@ FMaterialContent::FMaterialContent(filament::Engine*              engine,
 }
 
 FMaterialContent::~FMaterialContent() {
-    spdlog::debug("Destroying material: {}", (void*)m_instance);
+    spdlog::debug("Destroying material: {}", (void*)this);
     m_engine->destroy(m_instance);
 }
 
@@ -579,7 +600,7 @@ void FMaterialContent::set_texture(FMatTexSemantic               semantic,
                   parameter_name,
                   (void*)content->texture());
 
-    __builtin_dump_struct(&b_sampler, &printf);
+    //__builtin_dump_struct(&b_sampler, &printf);
 
     switch (semantic) {
 
