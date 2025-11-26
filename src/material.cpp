@@ -558,6 +558,10 @@ void FMaterialContent::set_transmission(float ao) {
     m_instance->setParameter("transmissionFactor", ao);
 }
 
+void FMaterialContent::set_clearcoat(float cc) {
+    m_instance->setParameter("clearCoatFactor", cc);
+}
+
 void FMaterialContent::set_ior(float ior) {
     m_instance->setParameter("ior", ior);
 }

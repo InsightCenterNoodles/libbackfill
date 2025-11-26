@@ -362,6 +362,7 @@ void fmaterial_set_ao_factor(FMaterial*, float ao);
 void fmaterial_set_emissive(FMaterial*, float strength, float3 factor);
 void fmaterial_set_transmission(FMaterial*, float tf);
 void fmaterial_set_ior(FMaterial*, float ior);
+void fmaterial_set_clearcoat(FMaterial*, float cc);
 void fmaterial_set_texture(FMaterial*, FMatTexSemantic, FTexture*, Sampler*);
 
 // Lights ======================================================================
@@ -450,6 +451,8 @@ void fs_debug_camera_obj(FSession*, char const* file);
 /// configuration after this call.
 void fs_add_light(FSession*, i32 entity, FLightConfig*);
 void fs_del_light(FSession*, i32 entity);
+
+void fs_set_visible(FSession*, i32 entity, uint8_t);
 
 // =============================================================================
 

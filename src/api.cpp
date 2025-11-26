@@ -285,6 +285,9 @@ void fmaterial_set_transmission(FMaterial* ptr, float tf) {
 void fmaterial_set_ior(FMaterial* ptr, float ior) {
     as_rc(ptr)->item.set_ior(ior);
 }
+void fmaterial_set_clearcoat(FMaterial* ptr, float cc) {
+    as_rc(ptr)->item.set_clearcoat(cc);
+}
 void fmaterial_set_texture(FMaterial*      ptr,
                            FMatTexSemantic semantic,
                            FTexture*       tex,
@@ -746,6 +749,10 @@ void fs_del_light(FSession* ptr, i32 entity) {
     filament::Engine* engine = ptr->engine();
 
     engine->getLightManager().destroy(utils::Entity::import(entity));
+}
+
+void fs_set_visible(FSession* ptr, i32 entity, uint8_t value) {
+    ptr->set_visible(utils::Entity::import(entity), value);
 }
 
 // =============================================================================

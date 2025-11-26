@@ -134,6 +134,8 @@ public:
 
     void set_parent(utils::Entity child, utils::Entity parent);
 
+    void set_visible(utils::Entity, uint8_t);
+
     void debug_camera(mat4* out_model, mat4* out_proj);
     void debug_camera_obj(char const* file);
 

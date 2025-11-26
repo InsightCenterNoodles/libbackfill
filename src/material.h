@@ -124,6 +124,8 @@ public:
 
     void set_ior(float ior);
 
+    void set_clearcoat(float cc);
+
     void set_texture(FMatTexSemantic, Owned<FTextureContent> const&, Sampler);
 
     operator filament::MaterialInstance*() const { return m_instance; }

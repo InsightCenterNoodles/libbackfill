@@ -327,6 +327,16 @@ void FSession::set_parent(utils::Entity child, utils::Entity parent) {
     tm.setParent(child_instance, parent_instance);
 }
 
+void FSession::set_visible(utils::Entity entity, uint8_t value) {
+    filament::Engine* ptr = engine();
+    auto& rm = ptr->getRenderableManager();
+
+    if (rm.hasComponent(entity)) {
+        auto instance = rm.getInstance(entity);
+        rm.setLayerMask(instance, 0xFF, value ? (1u << 0) : 0u);
+    }
+}
+
 void FSession::debug_camera(mat4* out_model, mat4* out_proj) {
     auto* c = this->camera();
 

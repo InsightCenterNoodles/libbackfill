@@ -44,6 +44,7 @@ RenderState::RenderState(FConfig const& config)
         m_view->setAmbientOcclusionOptions({ .enabled = true });
     }
 
+    m_view->setVisibleLayers(0xFF, 1u << 0);
 
     m_view->setScene(m_scene);
     m_view->setCamera(m_camera);
