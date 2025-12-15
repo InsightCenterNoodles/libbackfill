@@ -3,8 +3,8 @@ exec_prefix=@exec_prefix@
 libdir=@libdir@
 includedir=@includedir@
 
-Name: backfill
+Name: @BACKFILL_PKGCONFIG_NAME@
 Description: The backfill immersive rendering library
-Version: @PROJECT_VERSION@
-Libs: -L${libdir} -lbackfill
-Cflags: -I${includedir}
+Version: @BACKFILL_API_VERSION@
+Libs: -L${libdir} -lbackfill-@BACKFILL_ABI_VERSION@
+Cflags: -I${includedir}/backfill-@BACKFILL_ABI_VERSION@

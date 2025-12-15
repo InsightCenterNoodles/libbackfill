@@ -1,8 +1,5 @@
 cmake_minimum_required(VERSION 3.24 FATAL_ERROR)
 
-set(CMAKE_C_COMPILER   clang  CACHE STRING "" FORCE)
-set(CMAKE_CXX_COMPILER clang++ CACHE STRING "" FORCE)
-
 
 include(cmake/CPM.cmake)
 
@@ -67,6 +64,9 @@ project(
     LANGUAGES C CXX
 )
 
+set(BACKFILL_API_VERSION ${PROJECT_VERSION})
+set(BACKFILL_ABI_VERSION ${PROJECT_VERSION_MAJOR})
+
 # Library Target ===============================================================
 
 set(BACKFILL_SOURCES
@@ -86,7 +86,14 @@ set(BACKFILL_SOURCES
 
 add_library(backfill SHARED ${BACKFILL_SOURCES})
 
-set_target_properties(backfill PROPERTIES CXX_STANDARD 20)
+set_target_properties(backfill PROPERTIES
+    CXX_STANDARD 20
+
+    VERSION ${BACKFILL_API_VERSION}
+    SOVERSION ${BACKFILL_ABI_VERSION}
+
+    OUTPUT_NAME "backfill-${BACKFILL_ABI_VERSION}"
+)
 
 # Disable warnings for use of the embedded directive
 target_compile_options(backfill PRIVATE -Wno-c23-extensions)
@@ -214,10 +221,11 @@ target_link_libraries(backfill_demo PRIVATE backfill spdlog::spdlog_header_only)
 
 include(GNUInstallDirs)
 
+set(BACKFILL_INCLUDE_SUBDIR "backfill-${BACKFILL_ABI_VERSION}")
 
 # Install public headers
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/${BACKFILL_INCLUDE_SUBDIR}
         FILES_MATCHING
             PATTERN "*.h"
             PATTERN "*.hpp"
@@ -239,11 +247,13 @@ set(exec_prefix ${CMAKE_INSTALL_PREFIX})
 set(libdir ${CMAKE_INSTALL_FULL_LIBDIR})
 set(includedir ${CMAKE_INSTALL_FULL_INCLUDEDIR})
 
+set(BACKFILL_PKGCONFIG_NAME "backfill-${BACKFILL_ABI_VERSION}")
+
 configure_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/backfill.pc.in
-  ${CMAKE_CURRENT_BINARY_DIR}/backfill.pc
+  ${CMAKE_CURRENT_BINARY_DIR}/${BACKFILL_PKGCONFIG_NAME}.pc
   @ONLY
 )
 
-install(FILES ${CMAKE_CURRENT_BINARY_DIR}/backfill.pc
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${BACKFILL_PKGCONFIG_NAME}.pc
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig)
