@@ -70,7 +70,7 @@ def parse_args() -> argparse.Namespace:
     home_local = str(Path.home() / ".local")
     parser = argparse.ArgumentParser(description="Configure, build, and install libbackfill.")
     parser.add_argument("--dest", choices=["local", "global"], default="local",
-                        help="Installation destination: 'local' (~/.local) or 'global' (/opt). Default: local.")
+                        help="Installation destination: 'local' (~/.local) or 'global' (/opt/local). Default: local.")
     parser.add_argument("--prefix", default=None,
                         help="Override install prefix. If set, --dest is ignored.")
     parser.add_argument("--build-type", default="Release",
@@ -98,7 +98,7 @@ def main():
         if args.dest == "global":
             if sysname == "Darwin":
                 die("Global installation to /opt is disallowed on macOS. Use --dest local or provide --prefix.")
-            install_prefix = Path("/opt").resolve()
+            install_prefix = Path("/opt/local/").resolve()
         else:
             install_prefix = (Path.home() / ".local").resolve()
 
