@@ -509,6 +509,27 @@ bool FSession::run_frame() {
                                           near,
                                           far,
                                           camera());
+    } else {
+
+        auto head_pos = m_head_pos;
+        auto head_rot = filament::math::quat(m_head_rot);
+
+        auto                   dir = filament::math::float3 { 0, 0, -1 };
+        filament::math::float3 dir_roted;
+
+        {
+            filament::math::float3 u(head_rot.x, head_rot.y, head_rot.z);
+
+            float s = head_rot.w;
+
+            dir_roted = 2.0f * dot(u, dir) * u + (s * s - dot(u, u)) * dir +
+                        2.0f * s * cross(u, dir);
+        }
+
+        dir_roted += head_pos;
+
+
+        camera()->lookAt(head_pos, dir_roted, { 0, 1, 0 });
     }
 
     auto* renderer   = this->renderer().renderer();
