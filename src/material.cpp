@@ -426,7 +426,10 @@ void FMaterialConfigInternal::set_option(FMatOption option, uint8_t opt) {
     case DOUBLE_SIDED: material_key.doubleSided = opt; break;
     case UNLIT: material_key.unlit = opt; break;
     case CLEARCOAT: material_key.hasClearCoat = opt; break;
-    case TRANSMISSION: material_key.hasTransmission = opt; break;
+    case TRANSMISSION: {
+        material_key.hasTransmission = opt;
+        material_key.hasVolume       = opt;
+    } break;
     case IOR: material_key.hasIOR = opt; break;
     }
 }

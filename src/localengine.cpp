@@ -49,13 +49,103 @@ public:
                                      VkInstance instance,
                                      uint64_t   flags) const noexcept override {
         // if null, delegate to superior
+
+
+        VkSurfaceKHR surface = nullptr;
+        VkExtent2D   extent;
+
         if (!nativeWindow) {
-            return filament::backend::VulkanPlatform::createVkSurfaceKHR(
-                nativeWindow, instance, flags);
+
+#if defined(__linux__) && defined(FILAMENT_SUPPORTS_WAYLAND)
+            wl* ptrval    = reinterpret_cast<wl*>(nativeWindow);
+            extent.width  = ptrval->width;
+            extent.height = ptrval->height;
+
+            VkWaylandSurfaceCreateInfoKHR const createInfo = {
+                .sType   = VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR,
+                .pNext   = NULL,
+                .flags   = 0,
+                .display = ptrval->display,
+                .surface = ptrval->surface,
+            };
+            VkResult const result = vkCreateWaylandSurfaceKHR(
+                instance, &createInfo, VKALLOC, (VkSurfaceKHR*)&surface);
+            FILAMENT_CHECK_POSTCONDITION(result == VK_SUCCESS)
+                << "vkCreateWaylandSurfaceKHR error.";
+#elif defined(LINUX_OR_FREEBSD) && defined(FILAMENT_SUPPORTS_X11)
+            if (g_x11_vk.library == nullptr) {
+                g_x11_vk.library = dlopen(LIBRARY_X11, RTLD_LOCAL | RTLD_NOW);
+                FILAMENT_CHECK_PRECONDITION(g_x11_vk.library)
+                    << "Unable to open X11 library.";
+#    if defined(FILAMENT_SUPPORTS_XCB)
+                g_x11_vk.xcbConnect =
+                    (XCB_CONNECT)dlsym(g_x11_vk.library, "xcb_connect");
+                int screen;
+                g_x11_vk.connection = g_x11_vk.xcbConnect(nullptr, &screen);
+#    endif
+#    if defined(FILAMENT_SUPPORTS_XLIB)
+                g_x11_vk.openDisplay =
+                    (X11_OPEN_DISPLAY)dlsym(g_x11_vk.library, "XOpenDisplay");
+                g_x11_vk.display = g_x11_vk.openDisplay(NULL);
+                FILAMENT_CHECK_PRECONDITION(g_x11_vk.display)
+                    << "Unable to open X11 display.";
+#    endif
+            }
+#    if defined(FILAMENT_SUPPORTS_XCB) || defined(FILAMENT_SUPPORTS_XLIB)
+            bool useXcb = false;
+#    endif
+#    if defined(FILAMENT_SUPPORTS_XCB)
+#        if defined(FILAMENT_SUPPORTS_XLIB)
+            useXcb = (flags & SWAP_CHAIN_CONFIG_ENABLE_XCB) != 0;
+#        else
+            useXcb = true;
+#        endif
+            if (useXcb) {
+                FILAMENT_CHECK_POSTCONDITION(vkCreateXcbSurfaceKHR)
+                    << "Unable to load vkCreateXcbSurfaceKHR function.";
+
+                VkXcbSurfaceCreateInfoKHR const createInfo = {
+                    .sType      = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR,
+                    .connection = g_x11_vk.connection,
+                    .window =
+                        (xcb_window_t) reinterpret_cast<uint64_t>(nativeWindow),
+                };
+                VkResult const result = vkCreateXcbSurfaceKHR(
+                    instance, &createInfo, VKALLOC, (VkSurfaceKHR*)&surface);
+                FILAMENT_CHECK_POSTCONDITION(result == VK_SUCCESS)
+                    << "vkCreateXcbSurfaceKHR error="
+                    << static_cast<int32_t>(result);
+            }
+#    endif
+#    if defined(FILAMENT_SUPPORTS_XLIB)
+            if (!useXcb) {
+                FILAMENT_CHECK_POSTCONDITION(vkCreateXlibSurfaceKHR)
+                    << "Unable to load vkCreateXlibSurfaceKHR function.";
+
+                VkXlibSurfaceCreateInfoKHR const createInfo = {
+                    .sType  = VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR,
+                    .dpy    = g_x11_vk.display,
+                    .window = (Window)nativeWindow,
+                };
+                VkResult const result = vkCreateXlibSurfaceKHR(
+                    instance, &createInfo, VKALLOC, (VkSurfaceKHR*)&surface);
+                FILAMENT_CHECK_POSTCONDITION(result == VK_SUCCESS)
+                    << "vkCreateXlibSurfaceKHR error="
+                    << static_cast<int32_t>(result);
+            }
+#    endif
+#endif
+
+            if (!surface) {
+                spdlog::error("No custom surface fpr this platform");
+                // There is no way we can continue
+                abort();
+            }
+
+
+            return std::make_tuple(surface, extent);
         }
 
-        VkSurfaceKHR surface;
-        VkExtent2D   extent;
 
         bool vkok =
             SDL_Vulkan_CreateSurface(m_window, instance, nullptr, &surface);
@@ -63,7 +153,7 @@ public:
         if (!vkok or !surface) {
             std::string error = SDL_GetError();
 
-            spdlog::critical("Unable to create vulkan context: {}", error);
+            spdlog::error("Unable to create vulkan context: {}", error);
             // There is no way we can continue
             abort();
         }
@@ -75,6 +165,27 @@ public:
         extent.height = height;
 
         return std::make_tuple(surface, extent);
+    }
+
+    ExtensionSet getSwapchainInstanceExtensions() const override {
+        VulkanPlatform::ExtensionSet const ret = {
+#if defined(__linux__) && defined(FILAMENT_SUPPORTS_WAYLAND)
+            VK_KHR_WAYLAND_SURFACE_EXTENSION_NAME,
+#elif defined(LINUX_OR_FREEBSD) && defined(FILAMENT_SUPPORTS_X11)
+#    if defined(FILAMENT_SUPPORTS_XCB)
+            VK_KHR_XCB_SURFACE_EXTENSION_NAME,
+#    endif
+#    if defined(FILAMENT_SUPPORTS_XLIB)
+            VK_KHR_XLIB_SURFACE_EXTENSION_NAME,
+#    endif
+#endif
+#ifdef __APPLE__
+            VK_EXT_METAL_SURFACE_EXTENSION_NAME,
+#endif
+        };
+
+
+        return ret;
     }
 };
 

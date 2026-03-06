@@ -22,7 +22,7 @@ set(_no_error_depr "-Wno-error=deprecated-declarations")
 
 CPMAddPackage(
     NAME filament
-    URL https://github.com/google/filament/archive/refs/tags/v1.66.2.tar.gz
+    URL https://github.com/google/filament/archive/refs/tags/v1.69.5.tar.gz
     OPTIONS
         "BUILD_SHARED_LIBS OFF"
         "FILAMENT_SKIP_SAMPLES OFF"

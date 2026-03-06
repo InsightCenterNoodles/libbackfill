@@ -217,7 +217,7 @@ void FSession::set_env_light(RefCounted<EnvLightContent>* env_light) {
 
 void FSession::update_head(float3 pos, float4 quat) {
     m_head_pos = { pos.x, pos.y, pos.z };
-    m_head_rot = { quat.w, quat.x, quat.y, quat.z };
+    m_head_rot = normalize(filament::math::quatf(quat.w, quat.x, quat.y, quat.z));
 }
 
 filament::MaterialInstance*
@@ -514,17 +514,8 @@ bool FSession::run_frame() {
         auto head_pos = m_head_pos;
         auto head_rot = filament::math::quat(m_head_rot);
 
-        auto                   dir = filament::math::float3 { 0, 0, -1 };
-        filament::math::float3 dir_roted;
-
-        {
-            filament::math::float3 u(head_rot.x, head_rot.y, head_rot.z);
-
-            float s = head_rot.w;
-
-            dir_roted = 2.0f * dot(u, dir) * u + (s * s - dot(u, u)) * dir +
-                        2.0f * s * cross(u, dir);
-        }
+        auto const             dir       = filament::math::float3 { 0, 0, -1 };
+        filament::math::float3 dir_roted = head_rot * dir;
 
         dir_roted += head_pos;
 
