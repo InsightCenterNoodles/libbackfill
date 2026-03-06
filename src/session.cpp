@@ -217,7 +217,7 @@ void FSession::set_env_light(RefCounted<EnvLightContent>* env_light) {
 
 void FSession::update_head(float3 pos, float4 quat) {
     m_head_pos = { pos.x, pos.y, pos.z };
-    m_head_rot = { quat.w, quat.x, quat.y, quat.z };
+    m_head_rot = normalize(filament::math::quatf(quat.w, quat.x, quat.y, quat.z));
 }
 
 filament::MaterialInstance*
@@ -509,6 +509,18 @@ bool FSession::run_frame() {
                                           near,
                                           far,
                                           camera());
+    } else {
+
+        auto head_pos = m_head_pos;
+        auto head_rot = filament::math::quat(m_head_rot);
+
+        auto const             dir       = filament::math::float3 { 0, 0, -1 };
+        filament::math::float3 dir_roted = head_rot * dir;
+
+        dir_roted += head_pos;
+
+
+        camera()->lookAt(head_pos, dir_roted, { 0, 1, 0 });
     }
 
     auto* renderer   = this->renderer().renderer();
