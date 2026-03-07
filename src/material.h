@@ -67,9 +67,7 @@ class FTextureContent {
 
     // Staging buffer for 8-bit uploads (linear or sRGB)
     std::vector<uint8_t> m_staging_bytes;
-    std::mutex           m_ready_mutex;
-    std::condition_variable m_ready_cv;
-    bool m_ready = false;
+    std::atomic<bool>    m_ready = false;
 
     static void completion(void* buffer, size_t size, void* user);
 

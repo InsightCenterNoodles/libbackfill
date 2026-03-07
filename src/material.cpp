@@ -133,11 +133,7 @@ void FTextureContent::completion(void* buffer, size_t, void* user) {
     // Regenerate mipmaps
     ptr->texture()->generateMipmaps(*ptr->m_engine);
 
-    {
-        std::lock_guard<std::mutex> lock(ptr->m_ready_mutex);
-        ptr->m_ready = true;
-    }
-    ptr->m_ready_cv.notify_all();
+    ptr->m_ready = true;
 
     // Drop the temporary self-retain taken before setImage.
     auto* rc_self = reinterpret_cast<RefCounted<FTextureContent>*>(ptr);
@@ -352,10 +348,9 @@ FTextureContent::~FTextureContent() {
 }
 
 bool FTextureContent::wait_ready(uint32_t timeout_ms) {
-    std::unique_lock<std::mutex> lock(m_ready_mutex);
-    return m_ready_cv.wait_for(lock,
-                               std::chrono::milliseconds(timeout_ms),
-                               [&]() { return m_ready; });
+    while (!m_ready.load()) { }
+
+    return true;
 }
 
 // =============================================================================
