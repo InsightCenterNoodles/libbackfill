@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 
 
@@ -131,6 +132,12 @@ void FTextureContent::completion(void* buffer, size_t, void* user) {
 
     // Regenerate mipmaps
     ptr->texture()->generateMipmaps(*ptr->m_engine);
+
+    {
+        std::lock_guard<std::mutex> lock(ptr->m_ready_mutex);
+        ptr->m_ready = true;
+    }
+    ptr->m_ready_cv.notify_all();
 
     // Drop the temporary self-retain taken before setImage.
     auto* rc_self = reinterpret_cast<RefCounted<FTextureContent>*>(ptr);
@@ -344,6 +351,13 @@ FTextureContent::~FTextureContent() {
     spdlog::debug("Destroying texture {}", (void*)this);
 }
 
+bool FTextureContent::wait_ready(uint32_t timeout_ms) {
+    std::unique_lock<std::mutex> lock(m_ready_mutex);
+    return m_ready_cv.wait_for(lock,
+                               std::chrono::milliseconds(timeout_ms),
+                               [&]() { return m_ready; });
+}
+
 // =============================================================================
 
 
@@ -410,6 +424,10 @@ FTexture* ftex_init(FSession* ptr, FTextureConfig* cfg) {
     auto p = make_refcounted_unsafe<FTextureContent>(ptr, *cfg);
 
     return from_rc(p);
+}
+uint8_t ftex_wait_ready(FTexture* ptr, uint32_t timeout_ms) {
+    if (!ptr) return 0;
+    return as_rc(ptr)->item.wait_ready(timeout_ms) ? 1 : 0;
 }
 void ftex_acquire(FTexture* ptr) {
     as_rc(ptr)->retain();

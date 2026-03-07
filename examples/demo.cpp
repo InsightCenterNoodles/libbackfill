@@ -666,8 +666,19 @@ int main(int argc, char** argv) {
         auto* texture = ftex_init(session, texture_cfg);
 
         ftex_config_destroy(texture_cfg);
+        if (!texture) {
+            spdlog::error("Unable to create env texture");
+            fimg_release(image);
+            return EXIT_FAILURE;
+        }
 
         auto* ibl = fenv_light_init_equirect(session, texture);
+        if (!ibl) {
+            spdlog::error("Unable to create env light");
+            ftex_release(texture);
+            fimg_release(image);
+            return EXIT_FAILURE;
+        }
 
         ftex_release(texture);
         fimg_release(image);

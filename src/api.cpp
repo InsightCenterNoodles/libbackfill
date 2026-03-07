@@ -118,7 +118,20 @@ FBlobRef fblobref_whole(FBlob* ptr) {
 // =============================================================================
 
 FEnvironmentLight* fenv_light_init_equirect(FSession* ptr, FTexture* tex) {
+    if (!ptr || !tex) {
+        spdlog::error("fenv_light_init_equirect: invalid session or texture");
+        return nullptr;
+    }
+    if (!ftex_wait_ready(tex, 5000)) {
+        spdlog::error("fenv_light_init_equirect: texture was not ready");
+        return nullptr;
+    }
+
     auto p = make_refcounted_unsafe<EnvLightContent>(ptr, as_rc(tex));
+    if (!p) {
+        spdlog::error("fenv_light_init_equirect: unable to create env light");
+        return nullptr;
+    }
 
     return from_rc(p);
 }

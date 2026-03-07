@@ -238,6 +238,10 @@ FTexture* ftex_init(FSession*, FTextureConfig*);
 void      ftex_acquire(FTexture*);
 void      ftex_release(FTexture*);
 
+/// Wait for pending GPU upload(s) to complete for this texture.
+/// Returns 1 when ready, 0 on timeout or invalid input.
+uint8_t ftex_wait_ready(FTexture*, uint32_t timeout_ms);
+
 
 // Environment Light ===========================================================
 
