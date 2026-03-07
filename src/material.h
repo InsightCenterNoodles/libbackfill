@@ -8,6 +8,8 @@
 #include "utility.h"
 
 #include <array>
+#include <condition_variable>
+#include <mutex>
 #include <vector>
 
 namespace image {
@@ -65,6 +67,9 @@ class FTextureContent {
 
     // Staging buffer for 8-bit uploads (linear or sRGB)
     std::vector<uint8_t> m_staging_bytes;
+    std::mutex           m_ready_mutex;
+    std::condition_variable m_ready_cv;
+    bool m_ready = false;
 
     static void completion(void* buffer, size_t size, void* user);
 
@@ -74,6 +79,7 @@ public:
     ~FTextureContent();
 
     filament::Texture* texture() const { return m_texture; }
+    bool               wait_ready(uint32_t timeout_ms);
 };
 
 C_BRIDGE(FTexture, RefCounted<FTextureContent>);
